@@ -1,0 +1,33 @@
+<RCC>
+  <qresource prefix="Icons">
+    <file>Icons/log-out.svg</file>
+    <file>Icons/mqtt_icon.svg</file>
+    <file>Icons/battery.png</file>
+    <file>Icons/charge.png</file>
+    <file>Icons/empty-battery.png</file>
+    <file>Icons/full-battery.png</file>
+    <file>Icons/half-battery.png</file>
+    <file>Icons/low-battery.png</file>
+    <file>Icons/menu.svg</file>
+    <file>Icons/Refresh_icon.png</file>
+    <file>Icons/search.svg</file>
+    <file>Icons/8665193_chevron_down_icon.svg</file>
+    <file>Icons/8665194_chevron_left_icon.svg</file>
+    <file>Icons/8665195_chevron_right_icon.svg</file>
+    <file>Icons/8665196_chevron_up_icon.svg</file>
+  </qresource>
+  <qresource prefix="map">
+    <file>Map/map_fablab.pgm</file>
+  </qresource>
+  <qresource prefix="markers">
+    <file>Markers/marker.png</file>
+    <file>Markers/marker2.png</file>
+    <file>Markers/marker3.png</file>
+    <file>Markers/marker_indoor.png</file>
+  </qresource>
+  <qresource prefix="logos">
+    <file>Logos/Fablab Logo-aftercut.png</file>
+    <file>Logos/Logo BK.png</file>
+    <file>Logos/eureka.png</file>
+  </qresource>
+</RCC>
