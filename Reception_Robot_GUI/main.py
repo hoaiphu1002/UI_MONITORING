@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
         self.auto_return_timer.timeout.connect(self.auto_return_home)
 
         self.last_goal = None
-        self.HOME_NAME = "Home"   # ⚠️ phải đúng tên button
+        self.HOME_NAME = "Home"   
 
         # list user
         self.registered_users = [{
