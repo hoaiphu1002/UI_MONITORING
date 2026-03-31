@@ -41,11 +41,11 @@ class LocationTab(QWidget):
         self.logger.location_tab = self
 
         # 1. Tọa độ Home mong muốn (Pixel)
-        self.home_px = 825
-        self.home_py = 394
+        self.home_px = 150
+        self.home_py = 413
 
         # 2. PHẢI LOAD MAP TRƯỚC (Để lấy resolution và origin từ YAML)
-        self.load_map("Reception_Robot_GUI/resources/Map/new_map2.pgm")
+        self.load_map("Reception_Robot_GUI/resources/Map/B2_map.pgm")
 
         # 3. TÍNH TOÁN VỊ TRÍ BAN ĐẦU (Chuyển Pixel Home -> Mét)
         # Công thức tính tọa độ thực từ pixel
@@ -61,13 +61,12 @@ class LocationTab(QWidget):
 
         # Goals (Danh sách điểm đến)
         self.goals = {
-            "Restroom": (717, 505),
-            "Water intake": (736, 269),
-            "Home": (self.home_px, self.home_py),
-            "Chemistry hall": (835, 269),
-            "Robotics lab": (464, 792),
-            "Stairs": (820, 727),
-            "Electrical lab": (1116, 778),
+            "Library": (201, 377),  # Thư viện
+            "Home": (self.home_px, self.home_py),  # Nhà
+            "Chemistry hall": (196, 245),  # Phòng hóa học
+            "Restroom": (232, 176),  # Phòng vệ sinh
+            "Lab thực phẩm": (423, 168),  # Phòng thí nghiệm thực phẩm
+            "Lab dầu khí": (608, 157),  # Phòng thí nghiệm dầu khí
         }
 
         # Khởi tạo trajectory với điểm Home là điểm đầu tiên

@@ -238,38 +238,33 @@ class PathPlanner:
         self.path_items = []
         self.locations = {}
 
-        self.fixed_waypoints = { 
-            "wp11": (580, 791),
-            "wp0": (700, 789),
-            "wp1": (822, 780),
-            "wp2": (808, 525),
-            "wp3": (864, 504), 
-            "wp4": (860, 380),
-            "wp5": (850, 304),
-            "wp6": (835, 269),
-            "wp7": (736, 269),
-            "wp8": (750, 306),
-            "wp9": (790, 305),
-            "wp10": (960, 787),
-            "wp12": (860, 385),
-            "wp13": (808, 350),
+        self.fixed_waypoints = {
+            # Cặp waypoint thực tế scan từ map (theo đúng thứ tự)
+            "wp1": (203.61, 470.38),
+            "wp2": (209.56, 446.60),
+            "wp3": (201.45, 376.50),
+            "wp4": (198.76, 289.37),
+            "wp5": (194.71, 196.07),
+            "wp6": (232.36, 175.70),
+            "wp7": (423.03, 168.18),
+            "wp8": (607.89, 156.82),
+            "wp9": (521.55, 185.83),
+            "wp10": (459.69, 226.74),
+            "wp11": (477.16, 439.99),
         }
 
         self.graph_connections = {
-            "wp11": ["wp0"],
-            "wp13": ["wp4","wp12","wp9"],
-            "wp12": ["wp3", "wp4", "wp5"],
-            "wp0": ["wp1", "wp11"],
-            "wp1": ["wp0", "wp2"],
+            "wp1": ["wp2"],
             "wp2": ["wp1", "wp3"],
             "wp3": ["wp2", "wp4"],
-            "wp4": ["wp3", "wp5", "wp9"],
-            "wp5": ["wp4", "wp6", "wp9"],
-            "wp6": ["wp5", "wp7", "wp9"], 
-            "wp7": ["wp6", "wp8"],
+            "wp4": ["wp3", "wp5"],
+            "wp5": ["wp4", "wp6"],
+            "wp6": ["wp5", "wp7"],
+            "wp7": ["wp6", "wp8", "wp9"],
             "wp8": ["wp7", "wp9"],
-            "wp9": ["wp4", "wp5", "wp6", "wp8","wp13"],
-            "wp10": ["wp1"]
+            "wp9": ["wp7", "wp8", "wp10"],
+            "wp10": ["wp9", "wp11"],
+            "wp11": ["wp10"],
         }
 
         self._draw_fixed_waypoints()
@@ -312,9 +307,51 @@ class PathPlanner:
             text.setDefaultTextColor(QColor(0, 0, 0))
             text.setPos(x + 12, y - 15)
 
+    def _normalize_name(self, name: str):
+        key = "goal_" + "".join(c.lower() if c.isalnum() else "_" for c in name)
+        return key
+
+    def _find_nearest_waypoints(self, x, y, k=3):
+        candidates = []
+        for wp_name, (wx, wy) in self.fixed_waypoints.items():
+            dist = np.linalg.norm(np.array((wx, wy)) - np.array((x, y)))
+            candidates.append((dist, wp_name))
+        candidates.sort(key=lambda e: e[0])
+        return [wp for _, wp in candidates[:k]]
+
+    def _remove_goal_nodes(self):
+        for node in list(getattr(self, 'goal_nodes', [])):
+            self.fixed_waypoints.pop(node, None)
+            if node in self.graph_connections:
+                self.graph_connections.pop(node, None)
+            for neighbors in self.graph_connections.values():
+                if node in neighbors:
+                    neighbors.remove(node)
+        self.goal_nodes = set()
+
     def set_locations(self, locations: dict):
         self.locations = locations
+
+        # xóa goal nodes cũ (nếu set_locations đã chạy trước đó)
+        self._remove_goal_nodes()
+
         for name, (x, y) in locations.items():
+            goal_node = self._normalize_name(name)
+            self.goal_nodes.add(goal_node)
+            self.fixed_waypoints[goal_node] = (x, y)
+
+            # Gắn điểm arrival (goal) vào đồ thị bằng cách liên kết tới 3 waypoint gần nhất
+            nearest = self._find_nearest_waypoints(x, y, k=3)
+            self.graph_connections.setdefault(goal_node, [])
+            for n in nearest:
+                if n == goal_node:
+                    continue
+                if n not in self.graph_connections.get(goal_node, []):
+                    self.graph_connections[goal_node].append(n)
+                self.graph_connections.setdefault(n, [])
+                if goal_node not in self.graph_connections[n]:
+                    self.graph_connections[n].append(goal_node)
+
             self._draw_marker(x, y, name)
 
     def _draw_marker(self, x, y, label):

@@ -43,12 +43,17 @@ class MapClickView(QGraphicsView):
         print("Click lên bản đồ để lấy tọa độ pixel")
 # Danh sách cần chuyển đổi
         my_pixels = {
-            "Restroom": (717, 505),
-            "Water intake": (736, 269),
-            "Chemistry hall": (835, 269),
-            "Robotics lab": (464, 792),
-            "Stairs": (820, 727),
-            "Electrical lab": (1116, 778)
+            "Home": (204, 470),
+            "Restroom": (210, 447),
+            "Water intake": (201, 377),
+            "Chemistry hall": (199, 289),
+            "Robotics lab": (195, 196),
+            "Stairs": (232, 176),
+            "Electrical lab": (423, 168),
+            "Point8": (608, 157),
+            "Point9": (522, 186),
+            "Point10": (460, 227),
+            "Point11": (477, 440),
         }
         
         print("\n=== ĐANG CHUYỂN ĐỔI DANH SÁCH GOALS ===")
@@ -59,8 +64,8 @@ class MapClickView(QGraphicsView):
             print(f'"{name}": ({mx:.3f}, {my:.3f}),')
     def mousePressEvent(self, event: QMouseEvent):
 
-        x = 17.9232163663
-        y = 19.9541592458
+        x = 17.74828361
+        y = 1.746364341
         py = self.map_height - (y - self.map_origin[1]) / self.map_resolution 
         px = (x - self.map_origin[0]) / self.map_resolution 
         print(f"Example conversion: ({x}, {y})m → ({int(px)}, {int(py)}) pixels")
@@ -98,7 +103,7 @@ class MapClickWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    map_path = "Reception_Robot_GUI/resources/Map/new_map2.pgm"
+    map_path = "Reception_Robot_GUI/resources/Map/B2_map.pgm"
     window = MapClickWindow(map_path)
     window.show()
     sys.exit(app.exec())
