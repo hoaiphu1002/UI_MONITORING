@@ -10,7 +10,6 @@ class PathPlanner:
         self.path_items = []
         self.locations = {}
 
-        # === n fixed waypoints ===
         self.fixed_waypoints = { 
             "wp11": (580, 791),
             "wp0": (700, 789),
@@ -26,10 +25,8 @@ class PathPlanner:
             "wp10": (960, 787),
             "wp12": (860, 385),
             "wp13": (794, 350),
-
         }
 
-        # === graph ===
         self.graph_connections = {
             "wp11": ["wp0"],
             "wp13": ["wp9"],
@@ -46,7 +43,43 @@ class PathPlanner:
             "wp9": ["wp4", "wp5", "wp6", "wp8"],
             "wp10": ["wp1"]
         }
+
+        # Chuyển sang đồ thị không hướng (hai chiều) để tìm đường tuần tự đúng
+        for wp, neighbours in list(self.graph_connections.items()):
+            for n in neighbours:
+                self.graph_connections.setdefault(n, [])
+                if wp not in self.graph_connections[n]:
+                    self.graph_connections[n].append(wp)
+
         self._draw_fixed_waypoints()
+
+    # =========================
+    # 🔥 NEW: tính góc đổi hướng
+    # =========================
+    def _angle_penalty(self, prev, curr, next):
+        if prev is None:
+            return 0
+
+        v1 = np.array(curr) - np.array(prev)
+        v2 = np.array(next) - np.array(curr)
+
+        norm1 = np.linalg.norm(v1)
+        norm2 = np.linalg.norm(v2)
+
+        if norm1 == 0 or norm2 == 0:
+            return 0
+
+        cos_theta = np.dot(v1, v2) / (norm1 * norm2)
+        cos_theta = np.clip(cos_theta, -1, 1)
+        angle = np.degrees(np.arccos(cos_theta))
+
+        # 🔥 tuning
+        if angle > 120:
+            return 200   # quay đầu → phạt nặng
+        elif angle > 60:
+            return 50    # rẽ vừa
+        else:
+            return 0     # đi thẳng
 
     def _draw_fixed_waypoints(self):
         for name, (x, y) in self.fixed_waypoints.items():
@@ -72,10 +105,6 @@ class PathPlanner:
         text.setDefaultTextColor(QColor(0, 0, 0))
         text.setPos(x + 10, y - 12)
 
-    # ======================================================
-    # check if start/goal is on the segment between 2 wp
-    # if start os goal has 1 candidate, check if that candidate wp is between start and goal 
-    # ======================================================
     def _is_on_segment(self, point, wp1, wp2, tolerance):
         p = np.array(point)
         a = np.array(self.fixed_waypoints[wp1])
@@ -92,113 +121,87 @@ class PathPlanner:
     def _get_candidates(self, point):
         candidates = set()
 
-        # Check if point is on the segment 
         for wp1, neighbors in self.graph_connections.items():
             for wp2 in neighbors:
-                if wp1 >= wp2: continue  # tránh kiểm tra 2 lần
+                if wp1 >= wp2: continue
                 if self._is_on_segment(point, wp1, wp2, tolerance=10):
                     candidates.add(wp1)
                     candidates.add(wp2)
 
-        # if not on the segment, add nearest wp 
         if not candidates:
             nearest_wp_name = min(self.fixed_waypoints,
                                 key=lambda wp: np.linalg.norm(np.array(point) - np.array(self.fixed_waypoints[wp])))
             candidates.add(nearest_wp_name)
         return list(candidates)
-    
-    def _is_between(self, start, wp, goal, tolerance):
-        s, w, g = np.array(start), np.array(wp), np.array(goal)
-        
-        # 1. Phải gần thẳng hàng
-        if np.abs(np.cross(g - s, w - s)) > tolerance:
-            return False
-        
-        # 2. wp phải nằm giữa (dot product)
-        dot = np.dot(w - s, g - s)
-        len_sq = np.dot(g - s, g - s)
-        if dot < 0 or dot > len_sq:
-            return False
-        
-        return True
 
-# {"x":14.0,
-# "y":25.5,
-# "theta":0.0}
-# {"x":18.0,
-# "y":1.5,
-# "theta":0.0}
-# {"x":10.0,
-# "y":14.5,
-# "theta":0.0}
-# {"x":20.0,
-# "y":16.5,
-# "theta":0.0}
+    # =========================
+    # 🔥 NEW: custom Dijkstra
+    # =========================
+    def _dijkstra_with_heading(self, start, goal):
+        import heapq
 
-    # ==============================
-    # DIJKSTRA + DOUBLE CONSTRAINT (start/goal is on segment of not) 
-    # ==============================
+        queue = [(0, start, None, [])]  # cost, current, prev, path
+        visited = set()  # lưu trạng thái (current, prev)
+
+        while queue:
+            cost, current, prev, path = heapq.heappop(queue)
+
+            state = (current, prev)
+            if state in visited:
+                continue
+            visited.add(state)
+
+            path = path + [current]
+
+            if current == goal:
+                return path, cost
+
+            for neighbor in self.graph_connections.get(current, []):
+                next_state = (neighbor, current)
+                if next_state in visited:
+                    continue
+
+                curr_pos = self.fixed_waypoints[current]
+                next_pos = self.fixed_waypoints[neighbor]
+
+                dist = np.linalg.norm(np.array(curr_pos) - np.array(next_pos))
+                penalty = self._angle_penalty(
+                    self.fixed_waypoints[prev] if prev else None,
+                    curr_pos,
+                    next_pos
+                )
+
+                new_cost = cost + dist + penalty
+
+                heapq.heappush(queue, (new_cost, neighbor, current, path))
+
+        return None, float('inf')
+
+    # =========================
+    # MAIN
+    # =========================
     def find_path(self, start_px, goal_label):
         if goal_label not in self.locations:
             raise ValueError(f"Goal '{goal_label}' not existed")
+
         goal_px = self.locations[goal_label]
-        print(f"Finding path {start_px} → {goal_label}:{goal_px}...")
 
-        # if distance between start and goal is small 
-        distance_pixels = np.linalg.norm(np.array(start_px) - np.array(goal_px))
-        if distance_pixels < 80:  
-            print(f"Distance between start and goal is small ({distance_pixels:.1f}px)")
-            path = [start_px, goal_px]
-            self.draw_path(path)
-            return path
-
-        # start, goal constraint 
         start_candidates = self._get_candidates(start_px)
-        print(f"Start candidate: {start_candidates}")
         goal_candidates = self._get_candidates(goal_px)
-        print(f"Goal candidate: {goal_candidates}")
 
-        # if start or goal has 1 candidate, we check if they are conlinear 
-        if len(start_candidates) == 1 or len(goal_candidates) == 1:
-            wp_s = self.fixed_waypoints[start_candidates[0]]
-            wp_g = self.fixed_waypoints[goal_candidates[0]]
-            skip_start_wp = self._is_between(start_px, wp_s, goal_px, tolerance=3)
-            skip_goal_wp  = self._is_between(start_px, wp_g, goal_px, tolerance=3)
-
-            if skip_start_wp or skip_goal_wp:
-                wp_name = start_candidates[0] if skip_start_wp else goal_candidates[0]
-                print(f"BỎ QUA wp {wp_name} vì nó nằm giữa đường đi → đi thẳng!")
-                path = [start_px, goal_px]
-                self.draw_path(path)
-                return path
-        
-        # graph 
-        G = nx.Graph()
-        for wp1, neighbors in self.graph_connections.items():
-            for wp2 in neighbors:
-                dist = np.linalg.norm(np.array(self.fixed_waypoints[wp1]) - np.array(self.fixed_waypoints[wp2]))
-                G.add_edge(wp1, wp2, weight=dist)
-
-        # find path 
         best_path = None
         min_cost = float('inf')
 
         for s_wp in start_candidates:
             for g_wp in goal_candidates:
-                try:
-                    path = nx.shortest_path(G, source=s_wp, target=g_wp, weight='weight')
-                    cost = nx.shortest_path_length(G, source=s_wp, target=g_wp, weight='weight')
-                    if cost < min_cost:
-                        min_cost = cost
-                        best_path = path
-                except nx.NetworkXNoPath:
-                    continue
+                path, cost = self._dijkstra_with_heading(s_wp, g_wp)
+                if path and cost < min_cost:
+                    min_cost = cost
+                    best_path = path
 
         if best_path is None:
-            print("No valid path! Going direct.")
             path_coords = [start_px, goal_px]
         else:
-            print(f"Optimal wp path: {best_path}")
             path_coords = [start_px]
             for wp in best_path:
                 path_coords.append(self.fixed_waypoints[wp])
@@ -206,7 +209,6 @@ class PathPlanner:
 
         self.draw_path(path_coords)
         return path_coords
-
 
     def draw_path(self, path):
         self.clear_path()
