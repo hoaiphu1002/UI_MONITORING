@@ -253,12 +253,13 @@ class PathPlanner:
             "wp11": (917, 436),  
             "wp12": (742, 436),
             "wp13": (416, 461),
+            "wp14": (900, 430)
         }
 
         self.graph_connections = {
-            "wp1": ["wp2"],
-            "wp2": ["wp1", "wp12", "wp3"],  
-            "wp3": ["wp12", "wp4"],  # Nhận từ wp12 hoặc wp4
+            "wp1": ["wp2","wp13"],
+            "wp2": ["wp1",  "wp3"],  
+            "wp3": [ "wp4","wp2"],  
             "wp4": ["wp3", "wp5"],
             "wp5": ["wp4", "wp6"],
             "wp6": ["wp5", "wp7"],
@@ -266,9 +267,10 @@ class PathPlanner:
             "wp8": ["wp7", "wp9"],
             "wp9": ["wp7", "wp8", "wp10"],
             "wp10": ["wp9", "wp11"],
-            "wp11": ["wp12"],
-            "wp12": [ "wp13"],
-            "wp13": ["wp1"],
+            "wp11": ["wp12","wp14"],
+            "wp12": [ "wp11","wp13","wp14"],
+            "wp13": ["wp1","wp12"],
+            "wp14": ["wp11","wp12"]
         }
 
         self._draw_fixed_waypoints()
