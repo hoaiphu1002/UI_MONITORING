@@ -204,7 +204,7 @@ class MainWindow(QMainWindow):
             # ===== START TIMER =====
             if self.last_goal != self.HOME_NAME:
                 print("⏱ Start 10s auto return timer")
-                self.auto_return_timer.start(10000)
+                self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
     # ================= AUTO RETURN =================
     def auto_return_home(self):

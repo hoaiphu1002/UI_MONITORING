@@ -16,31 +16,31 @@ class PathPlanner:
             "wp1": (822, 780),
             "wp2": (808, 525),
             "wp3": (864, 504), 
-            "wp4": (860, 380),
+            "wp4": (850, 360),
             "wp5": (850, 304),
             "wp6": (835, 269),
             "wp7": (736, 269),
             "wp8": (750, 306),
             "wp9": (790, 305),
             "wp10": (960, 787),
-            "wp12": (860, 385),
+            "wp12": (850, 385),
             "wp13": (794, 350),
         }
 
         self.graph_connections = {
             "wp11": ["wp0"],
-            "wp13": ["wp9"],
+            "wp13": ["wp4","wp5","wp9"],
             "wp12": ["wp3", "wp4", "wp5"],
             "wp0": ["wp1", "wp11"],
             "wp1": ["wp0", "wp2"],
             "wp2": ["wp1", "wp3"],
             "wp3": ["wp2", "wp4"],
-            "wp4": ["wp3", "wp5", "wp9"],
+            "wp4": ["wp3", "wp5", "wp9","wp13"],
             "wp5": ["wp4", "wp6", "wp9"],
-            "wp6": ["wp5", "wp7", "wp9"], 
-            "wp7": ["wp6", "wp8"],
+            "wp6": ["wp5", "wp7","wp8", "wp9"], 
+            "wp7": [ "wp8"],
             "wp8": ["wp7", "wp9"],
-            "wp9": ["wp4", "wp5", "wp6", "wp8"],
+            "wp9": ["wp4", "wp5", "wp8", "wp13"],
             "wp10": ["wp1"]
         }
 
@@ -73,7 +73,7 @@ class PathPlanner:
         cos_theta = np.clip(cos_theta, -1, 1)
         angle = np.degrees(np.arccos(cos_theta))
 
-        # 🔥 tuning
+        #Tuning
         if angle > 120:
             return 200   # quay đầu → phạt nặng
         elif angle > 60:
