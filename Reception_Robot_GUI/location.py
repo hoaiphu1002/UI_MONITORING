@@ -61,12 +61,13 @@ class LocationTab(QWidget):
 
         # Goals (Danh sách điểm đến)
         self.goals = {
-            "Library": (201, 377),  # Thư viện
+            "Thư viện": (201, 377),  # Thư viện
             "Home": (self.home_px, self.home_py),  # Nhà
+            "Home 2": (944, 468),  # Nhà 2
             "Chemistry hall": (196, 245),  # Phòng hóa học
-            "Restroom": (232, 176),  # Phòng vệ sinh
-            "Lab thực phẩm": (423, 168),  # Phòng thí nghiệm thực phẩm
-            "Lab dầu khí": (608, 157),  # Phòng thí nghiệm dầu khí
+            "VP.ĐOÀN": (232, 176),  # Phòng vệ sinh
+            "PTN Dầu khí": (423, 168),  # Phòng thí nghiệm thực phẩm
+            "Lab CEPP": (608, 157),  # Phòng thí nghiệm dầu khí
         }
 
         # Khởi tạo trajectory với điểm Home là điểm đầu tiên

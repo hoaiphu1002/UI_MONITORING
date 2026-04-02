@@ -242,7 +242,7 @@ class PathPlanner:
             # Cặp waypoint thực tế scan từ map (theo đúng thứ tự)
             "wp1": (203.61, 470.38),
             "wp2": (209.56, 446.60),
-            "wp3": (201.45, 376.50),
+            "wp3": (201.45, 400),
             "wp4": (198.76, 289.37),
             "wp5": (194.71, 196.07),
             "wp6": (232.36, 175.70),
@@ -250,13 +250,15 @@ class PathPlanner:
             "wp8": (607.89, 156.82),
             "wp9": (521.55, 185.83),
             "wp10": (459.69, 226.74),
-            "wp11": (477.16, 439.99),
+            "wp11": (917, 436),  
+            "wp12": (742, 436),
+            "wp13": (416, 461),
         }
 
         self.graph_connections = {
             "wp1": ["wp2"],
-            "wp2": ["wp1", "wp3"],
-            "wp3": ["wp2", "wp4"],
+            "wp2": ["wp1", "wp12", "wp3"],  
+            "wp3": ["wp12", "wp4"],  # Nhận từ wp12 hoặc wp4
             "wp4": ["wp3", "wp5"],
             "wp5": ["wp4", "wp6"],
             "wp6": ["wp5", "wp7"],
@@ -264,7 +266,9 @@ class PathPlanner:
             "wp8": ["wp7", "wp9"],
             "wp9": ["wp7", "wp8", "wp10"],
             "wp10": ["wp9", "wp11"],
-            "wp11": ["wp10"],
+            "wp11": ["wp12"],
+            "wp12": [ "wp13"],
+            "wp13": ["wp1"],
         }
 
         self._draw_fixed_waypoints()
@@ -289,11 +293,11 @@ class PathPlanner:
         cos_theta = np.clip(cos_theta, -1, 1)
         angle = np.degrees(np.arccos(cos_theta))
 
-        # 🔥 tuning
+        # 🔥 tuning: giảm penalty để robot chọn waypoint safety chứ không đều đường thẳng nguy hiểm
         if angle > 120:
-            return 200   # quay đầu → phạt nặng
+            return 30    # quay đầu → phạt nhẹ
         elif angle > 60:
-            return 50    # rẽ vừa
+            return 10    # rẽ vừa → phạt rất nhẹ
         else:
             return 0     # đi thẳng
 
@@ -436,11 +440,20 @@ class PathPlanner:
     # =========================
     # MAIN
     # =========================
-    def find_path(self, start_px, goal_label):
-        if goal_label not in self.locations:
-            raise ValueError(f"Goal '{goal_label}' not existed")
+    def _resolve_goal_label(self, goal_label):
+        if goal_label in self.locations:
+            return goal_label
 
-        goal_px = self.locations[goal_label]
+        normalized = goal_label.strip().casefold()
+        for name in self.locations.keys():
+            if name.strip().casefold() == normalized:
+                return name
+
+        raise ValueError(f"Goal '{goal_label}' not existed")
+
+    def find_path(self, start_px, goal_label):
+        goal_key = self._resolve_goal_label(goal_label)
+        goal_px = self.locations[goal_key]
 
         start_candidates = self._get_candidates(start_px)
         goal_candidates = self._get_candidates(goal_px)

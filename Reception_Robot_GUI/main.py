@@ -174,7 +174,8 @@ class MainWindow(QMainWindow):
             self.ui.btn_goal_C,
             self.ui.btn_goal_D,
             self.ui.btn_goal_E,
-            self.ui.btn_goal_F
+            self.ui.btn_goal_F,
+            self.ui.btn_goal_G
         ]
 
         for btn, name in zip(buttons, goals):
