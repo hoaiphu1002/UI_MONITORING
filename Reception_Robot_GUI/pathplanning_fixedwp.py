@@ -76,7 +76,7 @@ class PathPlanner:
         #Tuning
         if angle > 120:
             return 200   # quay đầu → phạt nặng
-        elif angle > 60:
+        elif angle > 90:
             return 50    # rẽ vừa
         else:
             return 0     # đi thẳng

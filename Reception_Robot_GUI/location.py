@@ -197,3 +197,4 @@ class LocationTab(QWidget):
         waypoints_json = json.dumps(self.full_plan_points, indent=2)
         publisher = WaypointsPublisher()
         publisher.publish_waypoints(waypoints_json)
+        
