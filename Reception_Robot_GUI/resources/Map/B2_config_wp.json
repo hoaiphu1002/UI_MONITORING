@@ -26,7 +26,7 @@
   },  
 
   "connections": {
-    "wp1": ["wp2", "wp13"],
+    "wp1": ["wp2", "wp14", "Home"],
     "wp2": ["wp1", "wp3"],
     "wp3": ["wp2", "wp4"],
     "wp4": ["wp3", "wp5"],
@@ -34,15 +34,15 @@
 
     "wp11": ["wp12", "Home 2"],
     "wp12": ["wp11", "wp13"],
-    "wp13": ["wp12", "wp14"],
-    "wp14": ["wp1", "wp13"],
+    "wp13": ["wp12", "wp14", "PTN hóa lý"],
+    "wp14": ["wp1", "wp13", "PTN hóa lý"],
 
-    "Home": ["wp1"],
+    "Home": ["wp1", "Thư viện", "Sân banh"],
     "Thư viện": ["Home"],
     "Sân banh": ["Home"],
 
     "Phòng họp": ["wp5","Nhà vệ sinh"],
-    "Nhà vệ sinh": ["wp5", "Phòng họp", "Nhà vệ sinh", "Nhà vệ sinh"],
+    "Nhà vệ sinh": ["wp5", "Phòng họp", "PTN vi sinh"],
     "PTN vi sinh": ["Nhà vệ sinh", "Lab CEPP"],
     
     "Lab CEPP": ["PTN vi sinh"],
