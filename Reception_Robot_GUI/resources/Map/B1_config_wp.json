@@ -1,0 +1,41 @@
+{
+  "waypoints": {
+    "wp0": [700, 789],
+    "wp1": [822, 780],
+    "wp2": [808, 525],
+    "wp3": [864, 504],
+    "wp5": [850, 304],
+    "wp9": [790, 305],
+    "wp11": [580, 791],
+    "wp12": [860, 385],
+    "wp13": [742, 300]
+  },
+  "goals": {
+    "Restroom": [717, 505],
+    "Water intake": [736, 269],
+    "Home": [825, 394],
+    "Chemistry hall": [835, 269],
+    "Robotics lab": [464, 792],
+    "Stairs": [820, 727],
+    "Electrical lab": [1116, 778]
+  },
+  "connections": {
+    "wp0": ["wp1", "wp11"],
+    "wp1": ["wp0", "wp2", "Stairs", "Electrical lab"],
+    "wp2": ["wp1", "wp3", "Stairs", "Restroom"],
+    "wp3": ["wp2", "wp12", "Restroom"],
+    "wp5": ["wp9", "wp12", "wp13", "Chemistry hall"],
+    "wp9": ["wp5", "wp12", "wp13", "Chemistry hall"],
+    "wp11": ["wp0", "Robotics lab"],
+    "wp12": ["wp3", "wp5", "wp9", "Home"],
+    "wp13": ["wp9", "wp5", "Water intake"],
+    
+    "Restroom": ["wp2", "wp3"],
+    "Water intake": ["wp13", "Chemistry hall"],
+    "Home": ["wp12"],
+    "Chemistry hall": ["wp5", "wp9", "wp12", "wp13", "Water intake"],
+    "Robotics lab": ["wp11"],
+    "Stairs": ["wp1", "wp2"],
+    "Electrical lab": ["wp1"]
+}
+}

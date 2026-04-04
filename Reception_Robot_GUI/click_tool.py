@@ -48,7 +48,8 @@ class MapClickView(QGraphicsView):
             "Chemistry hall": (835, 269),
             "Robotics lab": (464, 792),
             "Stairs": (820, 727),
-            "Electrical lab": (1116, 778)
+            "Electrical lab": (1116, 778),
+            "Home": (825, 394)
         }
         
         print("\n=== ĐANG CHUYỂN ĐỔI DANH SÁCH GOALS ===")
