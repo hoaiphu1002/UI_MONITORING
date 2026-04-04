@@ -42,11 +42,19 @@ class MainWindow(QMainWindow):
         self.HOME_NAME = "Home"   
 
         # list user
-        self.registered_users = [{
+        self.registered_users = [
+            {
             "username": "hoaiphu",
             "password": "123",
             "fullname": "Admin User",
             "phone": "0123456789",
+            "verify": "fablab"
+        },
+        {
+            "username": "bthw",
+            "password": "123",
+            "fullname": "Admin User",
+            "phone": "0987654321",
             "verify": "fablab"
         }]
 

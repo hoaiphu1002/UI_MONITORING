@@ -142,7 +142,7 @@ class PathPlanner:
                 path_coords.append(self.all_nodes[name])
 
             self.draw_path(path_coords)
-            print(f"✅ Route tối ưu: {' -> '.join(path_node_names)}")
+            print(f"Route tối ưu: {' -> '.join(path_node_names)}")
             return path_coords
 
         except Exception as e:
