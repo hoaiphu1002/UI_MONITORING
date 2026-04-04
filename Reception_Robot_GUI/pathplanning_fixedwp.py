@@ -237,44 +237,56 @@ class PathPlanner:
         self.scene = scene
         self.path_items = []
         self.locations = {}
-
+# 1. Định nghĩa Waypoints
         self.fixed_waypoints = {
-            # Cặp waypoint thực tế scan từ map (theo đúng thứ tự)
-            "wp1": (203.61, 470.38),
-            "wp2": (209.56, 446.60),
-            "wp3": (201.45, 400),
-            "wp4": (198.76, 289.37),
-            "wp5": (194.71, 196.07),
-            "wp6": (232.36, 175.70),
-            "wp7": (423.03, 168.18),
-            "wp8": (607.89, 156.82),
-            "wp9": (521.55, 185.83),
-            "wp10": (459.69, 226.74),
-            "wp11": (917, 436),  
+            "wp1": (204, 476),
+            "wp2": (209, 446),
+            "wp3": (201, 376),
+            "wp4": (198, 289),
+            "wp5": (194, 196),
+            "wp6": (232, 175),
+            "wp7": (423, 168),
+            "wp8": (630, 152),
+            "wp9": (190,476),
+            "wp11": (917, 436),
             "wp12": (742, 440),
             "wp13": (416, 460),
             "wp14": (900, 440)
+            
         }
 
+        # 2. Định nghĩa các kết nối (Graph)
         self.graph_connections = {
-            "wp1": ["wp2","wp13"],
-            "wp2": ["wp1",  "wp3"],  
-            "wp3": [ "wp4","wp2"],  
+            # Tuyến hành lang trái
+            "wp1": ["wp2", "wp13"],
+            "wp2": ["wp1", "wp3"],
+            "wp3": ["wp2", "wp4"],
             "wp4": ["wp3", "wp5"],
             "wp5": ["wp4", "wp6"],
+
+            # Tuyến hành lang trên
             "wp6": ["wp5", "wp7"],
-            "wp7": ["wp6", "wp8", "wp9"],
-            "wp8": ["wp7", "wp9"],
-            "wp9": ["wp7", "wp8", "wp10"],
-            "wp10": ["wp9", "wp11"],
-            "wp11": ["wp12","wp14"],
-            "wp12": [ "wp11","wp13","wp14"],
-            "wp13": ["wp1","wp12"],
-            "wp14": ["wp11","wp12"]
+            "wp7": ["wp6", "wp8"],
+            "wp8": ["wp7"],
+
+            # Tuyến hành lang phải (Cụm đích)
+            "wp11": ["wp12", "wp14"],
+            "wp14": ["wp11", "wp12"],
+            "wp12": ["wp11", "wp13", "wp14"],
+            
+            # Đoạn nối khép vòng
+            "wp13": ["wp12", "wp1"]
         }
 
-        self._draw_fixed_waypoints()
+        # 3. Tự động tạo đồ thị vô hướng (Tránh lỗi đi một chiều)
+        for wp, neighbours in list(self.graph_connections.items()):
+            for n in neighbours:
+                self.graph_connections.setdefault(n, [])
+                if wp not in self.graph_connections[n]:
+                    self.graph_connections[n].append(wp)
 
+        # 4. Vẽ waypoints lên scene
+        self._draw_fixed_waypoints()
     # =========================
     # 🔥 NEW: tính góc đổi hướng
     # =========================

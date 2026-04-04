@@ -41,8 +41,8 @@ class LocationTab(QWidget):
         self.logger.location_tab = self
 
         # 1. Tọa độ Home mong muốn (Pixel)
-        self.home_px = 150
-        self.home_py = 413
+        self.home_px = 121
+        self.home_py = 476
 
         # 2. PHẢI LOAD MAP TRƯỚC (Để lấy resolution và origin từ YAML)
         self.load_map("Reception_Robot_GUI/resources/Map/B2_map.pgm")
@@ -65,8 +65,8 @@ class LocationTab(QWidget):
             "Home": (self.home_px, self.home_py),  # Nhà
             "Chemistry hall": (196, 245),  # Phòng hóa học
             "VP.ĐOÀN": (232, 176),  # Phòng vệ sinh
-            "PTN Dầu khí": (423, 168),  # Phòng thí nghiệm thực phẩm
-            "Lab CEPP": (608, 157),  # Phòng thí nghiệm dầu khí   
+            "PTN vi sinh": (423, 168),  # Phòng thí nghiệm thực phẩm
+            "Lab CEPP": (630, 152),  # Phòng thí nghiệm dầu khí   
             "Home 2": (944, 468),  # Nhà 2
         }
 
