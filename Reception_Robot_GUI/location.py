@@ -40,49 +40,37 @@ class LocationTab(QWidget):
         self.logger = PathLogger()
         self.logger.location_tab = self
 
-        # 1. Tọa độ Home mong muốn (Pixel)
-        self.home_px = 121
-        self.home_py = 476
-
-        # 2. PHẢI LOAD MAP TRƯỚC (Để lấy resolution và origin từ YAML)
-        self.load_map("Reception_Robot_GUI/resources/Map/B2_map.pgm")
-
-        # 3. TÍNH TOÁN VỊ TRÍ BAN ĐẦU (Chuyển Pixel Home -> Mét)
-        # Công thức tính tọa độ thực từ pixel
-        init_x = self.map_origin[0] + (self.home_px * self.map_resolution)
-        init_y = self.map_origin[1] + (self.map_height - self.home_py) * self.map_resolution
-        
-        # Gán vị trí ban đầu là Home
-        self.last_position = [init_x, init_y, 0.0]
-
-        # 4. TẠO ROBOT VÀ VẼ LÊN UI NGAY LẬP TỨC
-        self.create_robot()
-        self.update_robot_gui() 
-
-        # Goals (Danh sách điểm đến)
-        self.goals = {
-            "Thư viện": (201, 377),  # Thư viện
-            "Home": (self.home_px, self.home_py),  # Nhà
-            "Chemistry hall": (196, 245),  # Phòng hóa học
-            "VP.ĐOÀN": (232, 176),  # Phòng vệ sinh
-            "PTN vi sinh": (423, 168),  # Phòng thí nghiệm thực phẩm
-            "Lab CEPP": (630, 152),  # Phòng thí nghiệm dầu khí   
-            "Home 2": (944, 468),  # Nhà 2
-        }
-
         # Khởi tạo trajectory với điểm Home là điểm đầu tiên
-        self.trajectory_points = [(self.home_px, self.home_py)]
-        self.trajectory_times = [datetime.now()]
         self.trajectory_items = []
 
+        # Path planner
+        self.planner = PathPlanner(self.map_scene)
+        # self.planner.set_locations(self.goals)
+
+        # Lấy danh sách goals trực tiếp từ planner
+        self.goals = self.planner.goals 
+        
+        # Home cũng lấy từ dữ liệu tập trung
+        home_coords = self.goals.get("Home", (825, 394))
+        self.home_px, self.home_py = home_coords
+
+        # Load map và các thiết lập khác
+        self.load_map("Reception_Robot_GUI/resources/Map/B2_map.pgm")
+        
+        # Khởi tạo robot tại vị trí Home
+        init_x = self.map_origin[0] + (self.home_px * self.map_resolution)
+        init_y = self.map_origin[1] + (self.map_height - self.home_py) * self.map_resolution
+
+        self.last_position = [init_x, init_y, 0.0]
+        self.create_robot()
+        self.update_robot_gui()
+
+        self.last_planned_path = []
+        
         # Timer cập nhật vị trí từ MQTT (nếu có)
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_robot_gui)
         self.update_timer.start(100)
-
-        # Path planner
-        self.planner = PathPlanner(self.map_scene)
-        self.planner.set_locations(self.goals)
 
     # ==========================================
     #                  MAP
@@ -177,23 +165,35 @@ class LocationTab(QWidget):
         return list(self.goals.keys())
 
     def plan_path(self, goal):
+        ref_point = None
+        if len(self.last_planned_path) >= 2:
+            # Điểm áp chót của lần chạy trước chính là "hướng đi tới" của robot
+            ref_point = self.last_planned_path[-2]
+            
         self.clear_trajectory()
         self.trajectory_points = []
         self.trajectory_times = []
+
         px, py = self.robot_pos
         self.trajectory_points.append((px, py))
         self.trajectory_times.append(datetime.now())
-        self.planned_path = self.planner.find_path(self.robot_pos, goal)
+
+        self.planned_path = self.planner.find_path(self.robot_pos, goal, ref_point)
         self.planner.draw_path(self.planned_path)
+        self.last_planned_path = self.planned_path
         self.plan_points = []
+
         for px, py in self.planned_path:
             x = self.map_origin[0] + px * self.map_resolution
             y = self.map_origin[1] + (self.map_height - py) * self.map_resolution
             self.plan_points.append({"x": round(x, 3), "y": round(y, 3)})
+            
         curx, cury, _ = self.last_position
         current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
         self.full_plan_points = [current_wp] + self.plan_points
+
         self.logger.start_logging(self.full_plan_points)
+
         waypoints_json = json.dumps(self.full_plan_points, indent=2)
         publisher = WaypointsPublisher()
         publisher.publish_waypoints(waypoints_json)

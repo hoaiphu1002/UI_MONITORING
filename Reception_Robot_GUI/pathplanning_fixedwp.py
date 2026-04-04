@@ -1,512 +1,188 @@
-# # pathplanning.py
-# import numpy as np
-# from PyQt6.QtGui import QPen, QColor, QBrush
-# from PyQt6.QtCore import Qt, QPointF
-# import networkx as nx
-
-# class PathPlanner:
-#     def __init__(self, scene):
-#         self.scene = scene
-#         self.path_items = []
-#         self.locations = {}
-
-#         # === n fixed waypoints ===
-#         self.fixed_waypoints = { 
-#             "wp11": (580, 791),
-#             "wp0": (700, 789),
-#             "wp1": (822, 780),
-#             "wp2": (808, 525),
-#             "wp3": (864, 504), 
-#             "wp4": (860, 380),
-#             "wp5": (850, 304),
-#             "wp6": (835, 269),
-#             "wp7": (736, 269),
-#             "wp8": (750, 306),
-#             "wp9": (790, 305),
-#             "wp10": (960, 787),
-#             "wp12": (860, 385),
-#             "wp13": (794, 350),
-
-#         }
-
-#         # === graph ===
-#         self.graph_connections = {
-#             "wp11": ["wp0"],
-#             "wp13": ["wp9"],
-#             "wp12": ["wp3", "wp4", "wp5"],
-#             "wp0": ["wp1", "wp11"],
-#             "wp1": ["wp0", "wp2"],
-#             "wp2": ["wp1", "wp3"],
-#             "wp3": ["wp2", "wp4"],
-#             "wp4": ["wp3", "wp5", "wp9"],
-#             "wp5": ["wp4", "wp6", "wp9"],
-#             "wp6": ["wp5", "wp7", "wp9"], 
-#             "wp7": ["wp6", "wp8"],
-#             "wp8": ["wp7", "wp9"],
-#             "wp9": ["wp4", "wp5", "wp6", "wp8"],
-#             "wp10": ["wp1"]
-#         }
-#         self._draw_fixed_waypoints()
-
-#     def _draw_fixed_waypoints(self):
-#         for name, (x, y) in self.fixed_waypoints.items():
-#             r = 4
-#             brush = QBrush(QColor(0, 255, 0))
-#             pen = QPen(QColor(0, 0, 0), 1)
-#             self.scene.addEllipse(x - r, y - r, r * 2, r * 2, pen, brush)
-#             text = self.scene.addText(name)
-#             text.setDefaultTextColor(QColor(0, 0, 0))
-#             text.setPos(x + 12, y - 15)
-
-#     def set_locations(self, locations: dict):
-#         self.locations = locations
-#         for name, (x, y) in locations.items():
-#             self._draw_marker(x, y, name)
-
-#     def _draw_marker(self, x, y, label):
-#         r = 6
-#         brush = QBrush(QColor(255, 200, 0))
-#         pen = QPen(QColor(0, 0, 0), 1)
-#         self.scene.addEllipse(x - r, y - r, r * 2, r * 2, pen, brush)
-#         text = self.scene.addText(label)
-#         text.setDefaultTextColor(QColor(0, 0, 0))
-#         text.setPos(x + 10, y - 12)
-
-#     # ======================================================
-#     # check if start/goal is on the segment between 2 wp
-#     # if start os goal has 1 candidate, check if that candidate wp is between start and goal 
-#     # ======================================================
-#     def _is_on_segment(self, point, wp1, wp2, tolerance):
-#         p = np.array(point)
-#         a = np.array(self.fixed_waypoints[wp1])
-#         b = np.array(self.fixed_waypoints[wp2])
-#         ab = b - a
-#         ap = p - a
-#         proj = np.dot(ap, ab) / np.dot(ab, ab)
-#         if proj < 0 or proj > 1:
-#             return False
-#         closest = a + proj * ab
-#         dist = np.linalg.norm(p - closest)
-#         return dist <= tolerance
-    
-#     def _get_candidates(self, point):
-#         candidates = set()
-
-#         # Check if point is on the segment 
-#         for wp1, neighbors in self.graph_connections.items():
-#             for wp2 in neighbors:
-#                 if wp1 >= wp2: continue  # tránh kiểm tra 2 lần
-#                 if self._is_on_segment(point, wp1, wp2, tolerance=10):
-#                     candidates.add(wp1)
-#                     candidates.add(wp2)
-
-#         # if not on the segment, add nearest wp 
-#         if not candidates:
-#             nearest_wp_name = min(self.fixed_waypoints,
-#                                 key=lambda wp: np.linalg.norm(np.array(point) - np.array(self.fixed_waypoints[wp])))
-#             candidates.add(nearest_wp_name)
-#         return list(candidates)
-    
-#     def _is_between(self, start, wp, goal, tolerance):
-#         s, w, g = np.array(start), np.array(wp), np.array(goal)
-        
-#         # 1. Phải gần thẳng hàng
-#         if np.abs(np.cross(g - s, w - s)) > tolerance:
-#             return False
-        
-#         # 2. wp phải nằm giữa (dot product)
-#         dot = np.dot(w - s, g - s)
-#         len_sq = np.dot(g - s, g - s)
-#         if dot < 0 or dot > len_sq:
-#             return False
-        
-#         return True
-
-# # {"x":14.0,
-# # "y":25.5,
-# # "theta":0.0}
-# # {"x":18.0,
-# # "y":1.5,
-# # "theta":0.0}
-# # {"x":10.0,
-# # "y":14.5,
-# # "theta":0.0}
-# # {"x":20.0,
-# # "y":16.5,
-# # "theta":0.0}
-
-#     # ==============================
-#     # DIJKSTRA + DOUBLE CONSTRAINT (start/goal is on segment of not) 
-#     # ==============================
-#     def find_path(self, start_px, goal_label):
-#         if goal_label not in self.locations:
-#             raise ValueError(f"Goal '{goal_label}' not existed")
-#         goal_px = self.locations[goal_label]
-#         print(f"Finding path {start_px} → {goal_label}:{goal_px}...")
-
-#         # if distance between start and goal is small 
-#         distance_pixels = np.linalg.norm(np.array(start_px) - np.array(goal_px))
-#         if distance_pixels < 80:  
-#             print(f"Distance between start and goal is small ({distance_pixels:.1f}px)")
-#             path = [start_px, goal_px]
-#             self.draw_path(path)
-#             return path
-
-#         # start, goal constraint 
-#         start_candidates = self._get_candidates(start_px)
-#         print(f"Start candidate: {start_candidates}")
-#         goal_candidates = self._get_candidates(goal_px)
-#         print(f"Goal candidate: {goal_candidates}")
-
-#         # if start or goal has 1 candidate, we check if they are conlinear 
-#         if len(start_candidates) == 1 or len(goal_candidates) == 1:
-#             wp_s = self.fixed_waypoints[start_candidates[0]]
-#             wp_g = self.fixed_waypoints[goal_candidates[0]]
-#             skip_start_wp = self._is_between(start_px, wp_s, goal_px, tolerance=3)
-#             skip_goal_wp  = self._is_between(start_px, wp_g, goal_px, tolerance=3)
-
-#             if skip_start_wp or skip_goal_wp:
-#                 wp_name = start_candidates[0] if skip_start_wp else goal_candidates[0]
-#                 print(f"BỎ QUA wp {wp_name} vì nó nằm giữa đường đi → đi thẳng!")
-#                 path = [start_px, goal_px]
-#                 self.draw_path(path)
-#                 return path
-        
-#         # graph 
-#         G = nx.Graph()
-#         for wp1, neighbors in self.graph_connections.items():
-#             for wp2 in neighbors:
-#                 dist = np.linalg.norm(np.array(self.fixed_waypoints[wp1]) - np.array(self.fixed_waypoints[wp2]))
-#                 G.add_edge(wp1, wp2, weight=dist)
-
-#         # find path 
-#         best_path = None
-#         min_cost = float('inf')
-
-#         for s_wp in start_candidates:
-#             for g_wp in goal_candidates:
-#                 try:
-#                     path = nx.shortest_path(G, source=s_wp, target=g_wp, weight='weight')
-#                     cost = nx.shortest_path_length(G, source=s_wp, target=g_wp, weight='weight')
-#                     if cost < min_cost:
-#                         min_cost = cost
-#                         best_path = path
-#                 except nx.NetworkXNoPath:
-#                     continue
-
-#         if best_path is None:
-#             print("No valid path! Going direct.")
-#             path_coords = [start_px, goal_px]
-#         else:
-#             print(f"Optimal wp path: {best_path}")
-#             path_coords = [start_px]
-#             for wp in best_path:
-#                 path_coords.append(self.fixed_waypoints[wp])
-#             path_coords.append(goal_px)
-
-#         self.draw_path(path_coords)
-#         return path_coords
-
-
-#     def draw_path(self, path):
-#         self.clear_path()
-#         if len(path) < 2:
-#             return
-#         pen = QPen(QColor(255, 0, 0), 1)
-#         pen.setStyle(Qt.PenStyle.DashLine)
-#         pen.setDashPattern([8, 4])
-#         for i in range(len(path) - 1):
-#             p1 = QPointF(path[i][0], path[i][1])
-#             p2 = QPointF(path[i + 1][0], path[i + 1][1])
-#             line = self.scene.addLine(p1.x(), p1.y(), p2.x(), p2.y(), pen)
-#             self.path_items.append(line)
-
-#     def clear_path(self):
-#         for item in self.path_items:
-#             self.scene.removeItem(item)
-#         self.path_items.clear()
-
-# pathplanning.py
 import numpy as np
-from PyQt6.QtGui import QPen, QColor, QBrush
-from PyQt6.QtCore import Qt, QPointF
 import networkx as nx
+import json
+import math
+from datetime import datetime
+from PyQt6.QtGui import QPen, QColor, QBrush
+from PyQt6.QtCore import Qt
 
 class PathPlanner:
-    def __init__(self, scene):
+    def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B2_config_wp.json"):
         self.scene = scene
         self.path_items = []
-        self.locations = {}
-# 1. Định nghĩa Waypoints
-        self.fixed_waypoints = {
-            "wp1": (204, 476),
-            "wp2": (209, 446),
-            "wp3": (201, 376),
-            "wp4": (198, 289),
-            "wp5": (194, 196),
-            "wp6": (232, 175),
-            "wp7": (423, 168),
-            "wp8": (630, 152),
-            "wp9": (190,476),
-            "wp11": (917, 436),
-            "wp12": (742, 440),
-            "wp13": (416, 460),
-            "wp14": (900, 440)
+        
+        # Load dữ liệu từ JSON
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
             
-        }
+        self.waypoints = config['waypoints']
+        self.goals = config['goals']
+        self.connections = config['connections']
+        
+        # Hợp nhất tất cả các điểm
+        self.all_nodes = {**self.waypoints, **self.goals}
+        
+        # --- THIẾT LẬP HỆ SỐ PHẠT ---
+        self.BASE_TURN_PENALTY = 5000.0
+        self.SHARP_TURN_MULTIPLIER = 100.0
+        
+        # Xây dựng Đồ thị góc rẽ (Turn Graph) ngay từ lúc khởi tạo
+        self._build_static_turn_graph()
+        self._draw_fixed_points()
 
-        # 2. Định nghĩa các kết nối (Graph)
-        self.graph_connections = {
-            # Tuyến hành lang trái
-            "wp1": ["wp2", "wp13"],
-            "wp2": ["wp1", "wp3"],
-            "wp3": ["wp2", "wp4"],
-            "wp4": ["wp3", "wp5"],
-            "wp5": ["wp4", "wp6"],
+    def _build_static_turn_graph(self):
+        """Xây dựng Line Graph: Các nút là các cạnh có hướng (u, v)"""
+        self.static_turn_graph = nx.DiGraph()
+        
+        for v in self.connections:
+            for u in self.connections: # Giả định đồ thị có thể đi 2 chiều nếu bạn khai báo cả 2
+                if v in self.connections.get(u, []):
+                    # Đây là một cạnh có hướng (u -> v)
+                    edge_in = (u, v)
+                    
+                    # Tìm các cạnh tiếp theo (v -> w)
+                    for w in self.connections.get(v, []):
+                        if w == u: continue # Bỏ qua quay đầu tại chỗ 180 độ trên cùng 1 cạnh
+                        
+                        edge_out = (v, w)
+                        
+                        # Tính khoảng cách thực đoạn v -> w
+                        dist_v_w = np.linalg.norm(np.array(self.all_nodes[v]) - np.array(self.all_nodes[w]))
+                        
+                        # Tính Penalty góc rẽ tại v khi đi từ u -> v -> w
+                        v1 = np.array(self.all_nodes[v]) - np.array(self.all_nodes[u])
+                        v2 = np.array(self.all_nodes[w]) - np.array(self.all_nodes[v])
+                        penalty = self._calculate_penalty_from_vectors(v1, v2)
+                        
+                        # Thêm vào đồ thị rẽ: Trọng số = Quãng đường + Hình phạt quẹo
+                        self.static_turn_graph.add_edge(edge_in, edge_out, weight=dist_v_w + penalty)
 
-            # Tuyến hành lang trên
-            "wp6": ["wp5", "wp7"],
-            "wp7": ["wp6", "wp8"],
-            "wp8": ["wp7"],
-
-            # Tuyến hành lang phải (Cụm đích)
-            "wp11": ["wp12", "wp14"],
-            "wp14": ["wp11", "wp12"],
-            "wp12": ["wp11", "wp13", "wp14"],
-            
-            # Đoạn nối khép vòng
-            "wp13": ["wp12", "wp1"]
-        }
-
-        # 3. Tự động tạo đồ thị vô hướng (Tránh lỗi đi một chiều)
-        for wp, neighbours in list(self.graph_connections.items()):
-            for n in neighbours:
-                self.graph_connections.setdefault(n, [])
-                if wp not in self.graph_connections[n]:
-                    self.graph_connections[n].append(wp)
-
-        # 4. Vẽ waypoints lên scene
-        self._draw_fixed_waypoints()
-    # =========================
-    # 🔥 NEW: tính góc đổi hướng
-    # =========================
-    def _angle_penalty(self, prev, curr, next):
-        if prev is None:
-            return 0
-
-        v1 = np.array(curr) - np.array(prev)
-        v2 = np.array(next) - np.array(curr)
-
+    def _calculate_penalty_from_vectors(self, v1, v2):
+        """Tính penalty giữa 2 vector hướng"""
         norm1 = np.linalg.norm(v1)
         norm2 = np.linalg.norm(v2)
+        if norm1 < 1e-6 or norm2 < 1e-6: return 0
+        
+        dot = np.clip(np.dot(v1/norm1, v2/norm2), -1.0, 1.0)
+        angle_diff = math.acos(dot)
+        
+        if angle_diff > math.pi / 2 + 0.1: # Góc quẹo > 90 (Góc nội bộ nhọn)
+            return self.BASE_TURN_PENALTY * (angle_diff / math.pi) * self.SHARP_TURN_MULTIPLIER
+        return self.BASE_TURN_PENALTY * (angle_diff / math.pi)
 
-        if norm1 == 0 or norm2 == 0:
-            return 0
+    def find_path(self, start_px, goal_name, ref_point=None):
+        if goal_name not in self.all_nodes: return None
 
-        cos_theta = np.dot(v1, v2) / (norm1 * norm2)
-        cos_theta = np.clip(cos_theta, -1, 1)
-        angle = np.degrees(np.arccos(cos_theta))
+        SNAP_THRESHOLD = 8.0
+        # 1. LOGIC SNAP
+        closest_node = min(self.all_nodes.keys(), key=lambda n: np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[n])))
+        min_dist = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[closest_node]))
+        is_snapped = min_dist <= SNAP_THRESHOLD
 
-        # 🔥 tuning: giảm penalty để robot chọn waypoint safety chứ không đều đường thẳng nguy hiểm
-        if angle > 120:
-            return 30    # quay đầu → phạt nhẹ
-        elif angle > 60:
-            return 10    # rẽ vừa → phạt rất nhẹ
+        # Tạo bản sao đồ thị rẽ để thêm các nút ảo START/END cho lượt này
+        G = self.static_turn_graph.copy()
+        start_node_virtual = "START_VIRTUAL"
+        end_node_virtual = "END_VIRTUAL"
+
+        # 2. Vector hướng hiện tại
+        v_heading = None
+        if ref_point is not None:
+            v_heading = np.array(start_px) - np.array(ref_point)
+            if np.linalg.norm(v_heading) < 1.0: v_heading = None
+
+        # 3. Kết nối START_VIRTUAL vào các cạnh bắt đầu khả thi
+        start_points = [closest_node] if is_snapped else self._get_candidates(start_px)
+        for sp in start_points:
+            for nb in self.connections.get(sp, []):
+                # Nút trong turn_graph là (sp, nb)
+                target_edge_node = (sp, nb)
+                dist_robot_to_sp = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[sp]))
+                
+                # Penalty rẽ ngay từ hướng robot vào cạnh sp->nb
+                v_first_edge = np.array(self.all_nodes[nb]) - np.array(self.all_nodes[sp])
+                p_init = self._calculate_penalty_from_vectors(v_heading, v_first_edge) if v_heading is not None else 0
+                
+                # Trọng số cạnh ảo = đường đến điểm đầu + phạt rẽ + đường đoạn đầu sp-nb
+                # Lưu ý: Ta cộng luôn dist sp-nb vì nút tiếp theo trong DiGraph sẽ bắt đầu tính từ nb
+                dist_sp_nb = np.linalg.norm(np.array(self.all_nodes[sp]) - np.array(self.all_nodes[nb]))
+                G.add_edge(start_node_virtual, target_edge_node, weight=dist_robot_to_sp + p_init + dist_sp_nb)
+
+        # 4. Kết nối các cạnh dẫn tới ĐÍCH vào END_VIRTUAL
+        for u in self.all_nodes:
+            if goal_name in self.connections.get(u, []):
+                # Nếu có cạnh u -> goal_name, nối nó vào nút kết thúc ảo
+                G.add_edge((u, goal_name), end_node_virtual, weight=0)
+
+        # 5. Dijkstra trên Turn Graph
+        if is_snapped:
+            print(f"[STATUS] SNAPPED to Waypoint: '{closest_node}' (Dist: {min_dist:.2f}px)")
         else:
-            return 0     # đi thẳng
+            print(f"[STATUS] Vị trí tự do (Dist tới {closest_node}: {min_dist:.2f}px)")
+        
+        print(f"Goal: {goal_name}")
 
-    def _draw_fixed_waypoints(self):
-        for name, (x, y) in self.fixed_waypoints.items():
-            r = 4
-            brush = QBrush(QColor(0, 255, 0))
-            pen = QPen(QColor(0, 0, 0), 1)
-            self.scene.addEllipse(x - r, y - r, r * 2, r * 2, pen, brush)
-            text = self.scene.addText(name)
-            text.setDefaultTextColor(QColor(0, 0, 0))
-            text.setPos(x + 12, y - 15)
-
-    def _normalize_name(self, name: str):
-        key = "goal_" + "".join(c.lower() if c.isalnum() else "_" for c in name)
-        return key
-
-    def _find_nearest_waypoints(self, x, y, k=3):
-        candidates = []
-        for wp_name, (wx, wy) in self.fixed_waypoints.items():
-            dist = np.linalg.norm(np.array((wx, wy)) - np.array((x, y)))
-            candidates.append((dist, wp_name))
-        candidates.sort(key=lambda e: e[0])
-        return [wp for _, wp in candidates[:k]]
-
-    def _remove_goal_nodes(self):
-        for node in list(getattr(self, 'goal_nodes', [])):
-            self.fixed_waypoints.pop(node, None)
-            if node in self.graph_connections:
-                self.graph_connections.pop(node, None)
-            for neighbors in self.graph_connections.values():
-                if node in neighbors:
-                    neighbors.remove(node)
-        self.goal_nodes = set()
-
-    def set_locations(self, locations: dict):
-        self.locations = locations
-
-        # xóa goal nodes cũ (nếu set_locations đã chạy trước đó)
-        self._remove_goal_nodes()
-
-        for name, (x, y) in locations.items():
-            goal_node = self._normalize_name(name)
-            self.goal_nodes.add(goal_node)
-            self.fixed_waypoints[goal_node] = (x, y)
-
-            # Gắn điểm arrival (goal) vào đồ thị bằng cách liên kết tới 3 waypoint gần nhất
-            nearest = self._find_nearest_waypoints(x, y, k=3)
-            self.graph_connections.setdefault(goal_node, [])
-            for n in nearest:
-                if n == goal_node:
-                    continue
-                if n not in self.graph_connections.get(goal_node, []):
-                    self.graph_connections[goal_node].append(n)
-                self.graph_connections.setdefault(n, [])
-                if goal_node not in self.graph_connections[n]:
-                    self.graph_connections[n].append(goal_node)
-
-            self._draw_marker(x, y, name)
-
-    def _draw_marker(self, x, y, label):
-        r = 6
-        brush = QBrush(QColor(255, 200, 0))
-        pen = QPen(QColor(0, 0, 0), 1)
-        self.scene.addEllipse(x - r, y - r, r * 2, r * 2, pen, brush)
-        text = self.scene.addText(label)
-        text.setDefaultTextColor(QColor(0, 0, 0))
-        text.setPos(x + 10, y - 12)
-
-    def _is_on_segment(self, point, wp1, wp2, tolerance):
-        p = np.array(point)
-        a = np.array(self.fixed_waypoints[wp1])
-        b = np.array(self.fixed_waypoints[wp2])
-        ab = b - a
-        ap = p - a
-        proj = np.dot(ap, ab) / np.dot(ab, ab)
-        if proj < 0 or proj > 1:
-            return False
-        closest = a + proj * ab
-        dist = np.linalg.norm(p - closest)
-        return dist <= tolerance
-    
-    def _get_candidates(self, point):
-        candidates = set()
-
-        for wp1, neighbors in self.graph_connections.items():
-            for wp2 in neighbors:
-                if wp1 >= wp2: continue
-                if self._is_on_segment(point, wp1, wp2, tolerance=10):
-                    candidates.add(wp1)
-                    candidates.add(wp2)
-
-        if not candidates:
-            nearest_wp_name = min(self.fixed_waypoints,
-                                key=lambda wp: np.linalg.norm(np.array(point) - np.array(self.fixed_waypoints[wp])))
-            candidates.add(nearest_wp_name)
-        return list(candidates)
-
-    # =========================
-    # 🔥 NEW: custom Dijkstra
-    # =========================
-    def _dijkstra_with_heading(self, start, goal):
-        import heapq
-
-        queue = [(0, start, None, [])]  # cost, current, prev, path
-        visited = set()
-
-        while queue:
-            cost, current, prev, path = heapq.heappop(queue)
-
-            if current in visited:
-                continue
-            visited.add(current)
-
-            path = path + [current]
-
-            if current == goal:
-                return path, cost
-
-            for neighbor in self.graph_connections.get(current, []):
-                if neighbor in visited:
-                    continue
-
-                curr_pos = self.fixed_waypoints[current]
-                next_pos = self.fixed_waypoints[neighbor]
-
-                dist = np.linalg.norm(np.array(curr_pos) - np.array(next_pos))
-                penalty = self._angle_penalty(
-                    self.fixed_waypoints[prev] if prev else None,
-                    curr_pos,
-                    next_pos
-                )
-
-                new_cost = cost + dist + penalty
-
-                heapq.heappush(queue, (new_cost, neighbor, current, path))
-
-        return None, float('inf')
-
-    # =========================
-    # MAIN
-    # =========================
-    def _resolve_goal_label(self, goal_label):
-        if goal_label in self.locations:
-            return goal_label
-
-        normalized = goal_label.strip().casefold()
-        for name in self.locations.keys():
-            if name.strip().casefold() == normalized:
-                return name
-
-        raise ValueError(f"Goal '{goal_label}' not existed")
-
-    def find_path(self, start_px, goal_label):
-        goal_key = self._resolve_goal_label(goal_label)
-        goal_px = self.locations[goal_key]
-
-        start_candidates = self._get_candidates(start_px)
-        goal_candidates = self._get_candidates(goal_px)
-
-        best_path = None
-        min_cost = float('inf')
-
-        for s_wp in start_candidates:
-            for g_wp in goal_candidates:
-                path, cost = self._dijkstra_with_heading(s_wp, g_wp)
-                if path and cost < min_cost:
-                    min_cost = cost
-                    best_path = path
-
-        if best_path is None:
-            path_coords = [start_px, goal_px]
-        else:
+        try:
+            # Kết quả là danh sách các CẠNH: [START, (u,v), (v,w), ..., END]
+            best_path_edges = nx.shortest_path(G, source=start_node_virtual, target=end_node_virtual, weight='weight')
+            
+            # Chuyển đổi list cạnh thành list tọa độ điểm
             path_coords = [start_px]
-            for wp in best_path:
-                path_coords.append(self.fixed_waypoints[wp])
-            path_coords.append(goal_px)
+            path_node_names = []
+            
+            for edge in best_path_edges:
+                if isinstance(edge, tuple): # Bỏ qua START_VIRTUAL và END_VIRTUAL
+                    u, v = edge
+                    if not path_node_names or path_node_names[-1] != u:
+                        path_node_names.append(u)
+                    if v not in path_node_names:
+                        path_node_names.append(v)
 
-        self.draw_path(path_coords)
-        return path_coords
+            # Lấy tọa độ từ tên node
+            for name in path_node_names:
+                path_coords.append(self.all_nodes[name])
+
+            self.draw_path(path_coords)
+            print(f"Route tối ưu: {' -> '.join(path_node_names)}")
+            return path_coords
+
+        except Exception as e:
+            print(f"Không tìm thấy đường đi mượt, đi thẳng. Lỗi: {e}")
+            path = [start_px, self.all_nodes[goal_name]]
+            self.draw_path(path)
+            return path
+
+    # --- Các hàm hỗ trợ vẽ và marker giữ nguyên ---
+    def _draw_fixed_points(self):
+        for name, pos in self.waypoints.items():
+            self._add_marker(pos[0], pos[1], name, QColor(0, 255, 0), 4)
+        for name, pos in self.goals.items():
+            self._add_marker(pos[0], pos[1], name, QColor(255, 200, 0), 6)
+
+    def _add_marker(self, x, y, label, color, r):
+        brush = QBrush(color)
+        pen = QPen(Qt.GlobalColor.black, 1)
+        ellipse = self.scene.addEllipse(x - r, y - r, r * 2, r * 2, pen, brush)
+        ellipse.setZValue(50) 
+        text = self.scene.addText(label)
+        text.setPos(x + 10, y - 12)
+        text.setDefaultTextColor(Qt.GlobalColor.black) 
+        text.setZValue(51) 
+
+    def _get_candidates(self, point):
+        dist_to_point = lambda name: np.linalg.norm(np.array(point) - np.array(self.all_nodes[name]))
+        candidates = sorted(self.all_nodes.keys(), key=dist_to_point)
+        return candidates[:3] 
 
     def draw_path(self, path):
         self.clear_path()
-        if len(path) < 2:
-            return
-        pen = QPen(QColor(255, 0, 0), 1)
-        pen.setStyle(Qt.PenStyle.DashLine)
-        pen.setDashPattern([8, 4])
+        pen = QPen(QColor(255, 0, 0), 2, Qt.PenStyle.DashLine)
         for i in range(len(path) - 1):
-            p1 = QPointF(path[i][0], path[i][1])
-            p2 = QPointF(path[i + 1][0], path[i + 1][1])
-            line = self.scene.addLine(p1.x(), p1.y(), p2.x(), p2.y(), pen)
+            line = self.scene.addLine(path[i][0], path[i][1], path[i+1][0], path[i+1][1], pen)
+            line.setZValue(10)
             self.path_items.append(line)
 
     def clear_path(self):
-        for item in self.path_items:
-            self.scene.removeItem(item)
+        for item in self.path_items: 
+            try: self.scene.removeItem(item)
+            except: pass
         self.path_items.clear()
