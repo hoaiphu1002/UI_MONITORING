@@ -102,7 +102,7 @@ class MainWindow(QMainWindow):
             self.ui.stackedWidget_2.setCurrentWidget(self.ui.page_control_2)
 
             self.admin_camera_tab = CameraTab(self.ui.camera_2, self.shared_browser)
-
+    
             self.admin_location_tab = LocationTab(self.ui.view_map_2)
             self.admin_location_tab.logger.cte_signal.connect(self.telemetry_tab.update_cte)
 
@@ -204,7 +204,7 @@ class MainWindow(QMainWindow):
             # ===== START TIMER =====
             if self.last_goal != self.HOME_NAME:
                 print("⏱ Start 10s auto return timer")
-                self.auto_return_timer.start(10000)
+                self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
     # ================= AUTO RETURN =================
     def auto_return_home(self):
