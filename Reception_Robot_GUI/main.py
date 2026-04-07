@@ -1,4 +1,5 @@
 import os, sys, json
+import numpy as np
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
@@ -213,6 +214,35 @@ class MainWindow(QMainWindow):
             if self.last_goal != self.HOME_NAME:
                 print("⏱ Start 10s auto return timer")
                 self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
+
+            # If we just arrived at Home, compute deviation angle vs reference wp14 and draw it
+            try:
+                if self.last_goal == self.HOME_NAME:
+                    planner = self.admin_location_tab.planner
+                    path = getattr(self.admin_location_tab, 'last_planned_path', None)
+                    # Need at least one previous point before Home
+                    if path and len(path) >= 2 and 'wp14' in planner.waypoints:
+                        home_pt = np.array(planner.all_nodes['Home'])
+                        prev_pt = np.array(path[-2])
+                        wp14_pt = np.array(planner.waypoints['wp14'])
+                        angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp14_pt)
+                        planner.last_deviation_angle = angle_deg
+                        planner.last_deviation_sign = sign
+                        planner.last_deviation_dot = dot
+                        planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
+                        print(f"[ARRIVAL] Deviation angle at Home: {angle_deg:.1f}°, sign={sign}")
+            except Exception as e:
+                print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
+                try:
+                    pub = AnglePublisher()
+                    try:
+                        pub.topic = get_topic("xoay_home")
+                    except Exception:
+                        pass
+                    signed_angle = float(round(sign * angle_deg, 3))
+                    pub.publish_angle({"angle": signed_angle})
+                except Exception as e:
+                    print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
 
     # ================= AUTO RETURN =================
     def auto_return_home(self):

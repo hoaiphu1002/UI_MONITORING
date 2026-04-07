@@ -3,8 +3,17 @@ import networkx as nx
 import json
 import math
 from datetime import datetime
-from PyQt6.QtGui import QPen, QColor, QBrush
+from PyQt6.QtGui import QPen, QColor, QBrush, QPainterPath
 from PyQt6.QtCore import Qt
+import os, sys
+# ensure project root is on sys.path so `MQTT` package can be imported when running file directly
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from MQTT.publisher_angle import AnglePublisher
+from MQTT.mqtt_publisher_config import get_topic
+from datetime import datetime as _dt
 
 class PathPlanner:
     def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B1_config_wp.json"):
@@ -30,6 +39,8 @@ class PathPlanner:
         # Xây dựng Đồ thị góc rẽ (Turn Graph) ngay từ lúc khởi tạo
         self._build_static_turn_graph()
         self._draw_fixed_points()
+        # Lazy angle publisher (created on first use)
+        self._angle_publisher = None
 
     def _build_static_turn_graph(self):
         """Xây dựng Line Graph: Các nút là các cạnh có hướng (u, v)"""
@@ -147,12 +158,34 @@ class PathPlanner:
             try:
                 if goal_name == 'Home':
                     # Last coord is Home
-                    if len(path_coords) >= 2 and 'wp4' in self.waypoints:
+                    # Nếu có waypoint tham chiếu `wp14`, tính góc lệch giữa vector vào Home (prev -> Home)
+                    # và vector từ Home tới wp14 (Home -> wp14)
+                    if len(path_coords) >= 2 and 'wp14' in self.waypoints:
                         home_pt = np.array(self.all_nodes['Home'])
                         prev_pt = np.array(path_coords[-2])
-                        wp4_pt = np.array(self.waypoints['wp4'])
-                        angle_deg, signed = self._compute_angle_between(prev_pt, home_pt, wp4_pt)
-                        self._draw_angle_visual(prev_pt, home_pt, wp4_pt, angle_deg, signed)
+                        wp14_pt = np.array(self.waypoints['wp14'])
+                        angle_deg, signed, dot = self._compute_angle_between(prev_pt, home_pt, wp14_pt)
+                        # save for external access
+                        self.last_deviation_angle = angle_deg
+                        self.last_deviation_sign = signed
+                        self.last_deviation_dot = dot
+                        self._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, signed)
+                        # Publish deviation over MQTT (include signed angle too)
+                        try:
+                            if self._angle_publisher is None:
+                                self._angle_publisher = AnglePublisher()
+                            # ensure publisher sends to the Home deviation topic
+                            try:
+                                self._angle_publisher.topic = get_topic("xoay_home")
+                            except Exception:
+                                pass
+                            # publish only the signed angle (as a short string)
+                            signed_angle = signed * angle_deg
+                            signed_angle_val = float(round(signed_angle, 3))
+                            # send minimal JSON payload similar to robot/location/waypoints structures
+                            self._angle_publisher.publish_angle({"angle": signed_angle_val})
+                        except Exception as e:
+                            print(f"MQTT publish failed: {e}")
             except Exception as ex:
                 print(f"Error computing/drawing angle: {ex}")
             print(f"Route tối ưu: {' -> '.join(path_node_names)}")
@@ -199,3 +232,102 @@ class PathPlanner:
             try: self.scene.removeItem(item)
             except: pass
         self.path_items.clear()
+        # also clear angle visuals when clearing path
+        for item in self.angle_items:
+            try: self.scene.removeItem(item)
+            except: pass
+        self.angle_items.clear()
+
+    def _compute_angle_between(self, prev_pt, home_pt, ref_pt):
+        """Compute angle between two vectors and return (angle_deg, sign, dot).
+
+        Vectors used:
+        - incoming: prev_pt -> home_pt
+        - reference: home_pt -> ref_pt
+
+        Returns tuple: (angle_deg, sign, dot_product)
+        where sign is +1 for CCW, -1 for CW, and dot_product = v_in . v_ref.
+        """
+        v_in = np.array(home_pt) - np.array(prev_pt)
+        v_ref = np.array(ref_pt) - np.array(home_pt)
+        n1 = np.linalg.norm(v_in)
+        n2 = np.linalg.norm(v_ref)
+        if n1 < 1e-6 or n2 < 1e-6:
+            return 0.0, 0, 0.0
+
+        # raw dot and cosine
+        dot_raw = float(np.dot(v_in, v_ref))
+        cos_val = np.clip(dot_raw / (n1 * n2), -1.0, 1.0)
+        angle_rad = math.acos(cos_val)
+        angle_deg = math.degrees(angle_rad)
+
+        # signed via 2D cross product z-component
+        u1 = v_in / n1
+        u2 = v_ref / n2
+        cross_z = u1[0] * u2[1] - u1[1] * u2[0]
+        sign = 1 if cross_z >= 0 else -1
+        return angle_deg, sign, dot_raw
+
+    def _draw_angle_visual(self, prev_pt, home_pt, ref_pt, angle_deg, sign):
+        """Draw incoming vector, reference vector and an arc indicating the angle."""
+        # clear previous
+        for it in self.angle_items:
+            try: self.scene.removeItem(it)
+            except: pass
+        self.angle_items.clear()
+
+        hx, hy = float(home_pt[0]), float(home_pt[1])
+        px, py = float(prev_pt[0]), float(prev_pt[1])
+        rx, ry = float(ref_pt[0]), float(ref_pt[1])
+
+        # Draw incoming line (prev -> home)
+        pen_in = QPen(QColor(0, 100, 255), 2)
+        line_in = self.scene.addLine(px, py, hx, hy, pen_in)
+        line_in.setZValue(20)
+        self.angle_items.append(line_in)
+
+        # Draw reference line (home -> ref)
+        pen_ref = QPen(QColor(0, 200, 0), 2)
+        line_ref = self.scene.addLine(hx, hy, rx, ry, pen_ref)
+        line_ref.setZValue(20)
+        self.angle_items.append(line_ref)
+
+        # Draw arc approximating the angle
+        v1 = np.array([px - hx, py - hy]) * -1.0  # home->prev (incoming direction)
+        v2 = np.array([rx - hx, ry - hy])
+        a1 = math.atan2(v1[1], v1[0])
+        a2 = math.atan2(v2[1], v2[0])
+
+        # normalize delta to [-pi, pi]
+        delta = a2 - a1
+        while delta <= -math.pi: delta += 2 * math.pi
+        while delta > math.pi: delta -= 2 * math.pi
+
+        # choose radius for arc (small, visible)
+        r = min(80.0, max(20.0, np.linalg.norm(v1) * 0.5, np.linalg.norm(v2) * 0.5))
+        steps = 24
+        path = QPainterPath()
+        for i in range(steps):
+            t = i / (steps - 1)
+            theta = a1 + t * delta
+            x = hx + r * math.cos(theta)
+            y = hy + r * math.sin(theta)
+            if i == 0:
+                path.moveTo(x, y)
+            else:
+                path.lineTo(x, y)
+
+        pen_arc = QPen(QColor(200, 0, 0), 2)
+        arc_item = self.scene.addPath(path, pen_arc)
+        arc_item.setZValue(21)
+        self.angle_items.append(arc_item)
+
+        # Angle label at midpoint of arc
+        mid_theta = a1 + 0.5 * delta
+        lx = hx + (r + 10) * math.cos(mid_theta)
+        ly = hy + (r + 10) * math.sin(mid_theta)
+        text = self.scene.addText(f"{angle_deg:.1f}°")
+        text.setDefaultTextColor(Qt.GlobalColor.red)
+        text.setPos(lx, ly)
+        text.setZValue(30)
+        self.angle_items.append(text)

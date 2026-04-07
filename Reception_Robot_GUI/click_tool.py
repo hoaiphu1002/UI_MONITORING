@@ -41,7 +41,7 @@ class MapClickView(QGraphicsView):
 
         print(f"Map loaded: {pixmap.width()}x{pixmap.height()} pixels")
         print("Click lên bản đồ để lấy tọa độ pixel")
-# Danh sách cần chuyển đổi
+        # Danh sách cần chuyển đổi (chuẩn hóa: tất cả giá trị dưới dạng tuple)
         my_pixels = {
             "Restroom": (717, 505),
             "Water intake": (736, 269),
@@ -49,9 +49,19 @@ class MapClickView(QGraphicsView):
             "Robotics lab": (464, 792),
             "Stairs": (820, 727),
             "Electrical lab": (1116, 778),
-            "Home": (825, 394)
+            "Home": (825, 394),
+            "wp0": (700, 789),
+            "wp1": (822, 780),
+            "wp2": (808, 525),
+            "wp3": (864, 504),
+            "wp5": (850, 304),
+            "wp9": (790, 305),
+            "wp11": (580, 791),
+            "wp12": (860, 385),
+            "wp13": (742, 300),
+            "wp14": (850, 394),
         }
-        
+
         print("\n=== ĐANG CHUYỂN ĐỔI DANH SÁCH GOALS ===")
         for name, (px, py) in my_pixels.items():
             # Áp dụng công thức có sẵn trong class
