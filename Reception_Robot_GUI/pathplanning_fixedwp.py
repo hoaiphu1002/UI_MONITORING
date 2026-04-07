@@ -10,6 +10,7 @@ class PathPlanner:
     def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B1_config_wp.json"):
         self.scene = scene
         self.path_items = []
+        self.angle_items = []
         
         # Load dữ liệu từ JSON
         with open(config_path, 'r') as f:
@@ -142,6 +143,18 @@ class PathPlanner:
                 path_coords.append(self.all_nodes[name])
 
             self.draw_path(path_coords)
+            # Nếu đích là Home thì tính góc lệch so với waypoint tham chiếu (wp4)
+            try:
+                if goal_name == 'Home':
+                    # Last coord is Home
+                    if len(path_coords) >= 2 and 'wp4' in self.waypoints:
+                        home_pt = np.array(self.all_nodes['Home'])
+                        prev_pt = np.array(path_coords[-2])
+                        wp4_pt = np.array(self.waypoints['wp4'])
+                        angle_deg, signed = self._compute_angle_between(prev_pt, home_pt, wp4_pt)
+                        self._draw_angle_visual(prev_pt, home_pt, wp4_pt, angle_deg, signed)
+            except Exception as ex:
+                print(f"Error computing/drawing angle: {ex}")
             print(f"Route tối ưu: {' -> '.join(path_node_names)}")
             return path_coords
 
