@@ -3,6 +3,7 @@ from PyQt6.QtGui import QPixmap, QPolygonF, QWheelEvent, QPainter, QBrush, QPen,
 from PyQt6.QtCore import QPointF, Qt, QTimer
 import yaml, json
 import numpy as np
+import math
 from datetime import datetime
 
 from pathplanning_fixedwp import PathPlanner
@@ -114,7 +115,24 @@ class LocationTab(QWidget):
         self.robot_item.setZValue(100)
         self.robot_w = pixmap.width()
         self.robot_h = pixmap.height()
+        self.robot_item.setTransformOriginPoint(self.robot_w / 2, self.robot_h / 2)
+        # Adjust if robot icon's forward direction in image is not along +X axis.
+        self.robot_icon_forward_offset_deg = 90.0
         self.map_scene.addItem(self.robot_item)
+
+        # Direction indicator so operator can see heading while moving.
+        self.heading_pen = QPen(QColor(255, 80, 0), 3)
+        self.heading_arrow_brush = QBrush(QColor(255, 80, 0))
+        self.heading_line = self.map_scene.addLine(0, 0, 0, 0, self.heading_pen)
+        self.heading_line.setZValue(110)
+        self.heading_arrow = QGraphicsPolygonItem()
+        self.heading_arrow.setBrush(self.heading_arrow_brush)
+        self.heading_arrow.setPen(QPen(Qt.GlobalColor.transparent, 0))
+        self.heading_arrow.setZValue(111)
+        self.map_scene.addItem(self.heading_arrow)
+
+        self._last_px_py = None
+        self._display_heading_deg = 0.0
 
     # ==========================================
     #          ROBOT REAL POSITION UPDATE
@@ -129,6 +147,23 @@ class LocationTab(QWidget):
         self.robot_pos = (px, py)
         self.robot_item.setPos(px - self.robot_w/2, py - self.robot_h/2)
 
+        # Prefer movement-based heading; fallback to incoming theta when standing still.
+        movement_heading = None
+        if self._last_px_py is not None:
+            dx = px - self._last_px_py[0]
+            dy = py - self._last_px_py[1]
+            if math.hypot(dx, dy) > 0.8:
+                movement_heading = math.degrees(math.atan2(dy, dx))
+
+        if movement_heading is not None:
+            self._display_heading_deg = movement_heading
+        else:
+            self._display_heading_deg = self._theta_to_scene_deg(theta)
+
+        self._update_heading_indicator(px, py, self._display_heading_deg)
+        self.robot_item.setRotation(self._display_heading_deg + self.robot_icon_forward_offset_deg)
+        self._last_px_py = (px, py)
+
         # Lưu vết đường đi (Trajectory)
         if hasattr(self, 'trajectory_points') and len(self.trajectory_points) > 0:
             current_point = (px, py)
@@ -142,6 +177,38 @@ class LocationTab(QWidget):
     def set_location(self, x, y, theta):
         """Hàm này nhận dữ liệu x, y, theta từ MQTT Manager"""
         self.last_position = [x, y, theta]
+
+    def _theta_to_scene_deg(self, theta):
+        # MQTT theta can be rad or deg depending on publisher; support both.
+        if abs(theta) <= (2 * math.pi + 0.1):
+            theta_deg = math.degrees(theta)
+        else:
+            theta_deg = theta
+        return -theta_deg
+
+    def _update_heading_indicator(self, cx, cy, heading_deg):
+        line_len = max(self.robot_w, self.robot_h) * 0.9
+        arrow_len = 10.0
+        arrow_half_width = 5.0
+        rad = math.radians(heading_deg)
+
+        tip_x = cx + line_len * math.cos(rad)
+        tip_y = cy + line_len * math.sin(rad)
+        self.heading_line.setLine(cx, cy, tip_x, tip_y)
+
+        base_x = tip_x - arrow_len * math.cos(rad)
+        base_y = tip_y - arrow_len * math.sin(rad)
+        left_x = base_x + arrow_half_width * math.cos(rad + math.pi / 2.0)
+        left_y = base_y + arrow_half_width * math.sin(rad + math.pi / 2.0)
+        right_x = base_x + arrow_half_width * math.cos(rad - math.pi / 2.0)
+        right_y = base_y + arrow_half_width * math.sin(rad - math.pi / 2.0)
+
+        arrow_poly = QPolygonF([
+            QPointF(tip_x, tip_y),
+            QPointF(left_x, left_y),
+            QPointF(right_x, right_y)
+        ])
+        self.heading_arrow.setPolygon(arrow_poly)
 
     # ... (Các hàm clear_trajectory, update_trajectory, plan_path giữ nguyên như cũ)
     def clear_trajectory(self):

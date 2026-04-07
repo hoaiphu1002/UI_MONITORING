@@ -28,8 +28,8 @@ TOPICS = {
     "waypoints": "robot/waypoints",
     "attendance": "robot/attendance",
     "goal": "robot/goal",
-    "deviation": "robot/deviation"
-    ,"xoay_home": "robot/xoay/home"
+    "deviation": "robot/deviation",
+    "xoay": "robot/xoay"
 }
 
 # Message Settings

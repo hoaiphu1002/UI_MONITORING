@@ -25,6 +25,8 @@ from camera import CameraController, CameraTab
 from robot_telemetry import PlotTelemetry
 
 from MQTT.publisher_goal import GoalPublisher 
+from MQTT.publisher_angle import AnglePublisher
+from MQTT.mqtt_publisher_config import get_topic
 
 
 class MainWindow(QMainWindow):
@@ -228,19 +230,26 @@ class MainWindow(QMainWindow):
                         angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp14_pt)
                         planner.last_deviation_angle = angle_deg
                         planner.last_deviation_sign = sign
+                        planner.last_deviation_signed_angle = sign * angle_deg
+                        planner.last_deviation_angle_360 = (planner.last_deviation_signed_angle + 360.0) % 360.0
                         planner.last_deviation_dot = dot
                         planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
-                        print(f"[ARRIVAL] Deviation angle at Home: {angle_deg:.1f}°, sign={sign}")
+                        print(
+                            f"[ARRIVAL] Deviation angle at Home: "
+                            f"signed={planner.last_deviation_signed_angle:.1f}°, "
+                            f"angle_360={planner.last_deviation_angle_360:.1f}°"
+                        )
             except Exception as e:
                 print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
-                try:
+                try:    
                     pub = AnglePublisher()
                     try:
-                        pub.topic = get_topic("xoay_home")
+                        pub.topic = get_topic("xoay")
                     except Exception:
                         pass
-                    signed_angle = float(round(sign * angle_deg, 3))
-                    pub.publish_angle({"angle": signed_angle})
+                    signed_angle = sign * angle_deg
+                    normalized_angle = float(round((signed_angle + 360.0) % 360.0, 3))
+                    pub.publish_angle({"angle": normalized_angle})
                 except Exception as e:
                     print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
 

@@ -168,22 +168,25 @@ class PathPlanner:
                         # save for external access
                         self.last_deviation_angle = angle_deg
                         self.last_deviation_sign = signed
+                        self.last_deviation_signed_angle = signed * angle_deg
+                        self.last_deviation_angle_360 = (self.last_deviation_signed_angle + 360.0) % 360.0
                         self.last_deviation_dot = dot
                         self._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, signed)
-                        # Publish deviation over MQTT (include signed angle too)
+                        # Publish deviation over MQTT in [0, 360).
                         try:
                             if self._angle_publisher is None:
                                 self._angle_publisher = AnglePublisher()
                             # ensure publisher sends to the Home deviation topic
                             try:
-                                self._angle_publisher.topic = get_topic("xoay_home")
+                                self._angle_publisher.topic = get_topic("xoay")
                             except Exception:
                                 pass
-                            # publish only the signed angle (as a short string)
+                            # Convert signed angle to heading-like [0, 360) before publishing.
                             signed_angle = signed * angle_deg
-                            signed_angle_val = float(round(signed_angle, 3))
+                            normalized_angle = (signed_angle + 360.0) % 360.0
+                            normalized_angle_val = float(round(normalized_angle, 3))
                             # send minimal JSON payload similar to robot/location/waypoints structures
-                            self._angle_publisher.publish_angle({"angle": signed_angle_val})
+                            self._angle_publisher.publish_angle({"angle": normalized_angle_val})
                         except Exception as e:
                             print(f"MQTT publish failed: {e}")
             except Exception as ex:
@@ -326,7 +329,10 @@ class PathPlanner:
         mid_theta = a1 + 0.5 * delta
         lx = hx + (r + 10) * math.cos(mid_theta)
         ly = hy + (r + 10) * math.sin(mid_theta)
-        text = self.scene.addText(f"{angle_deg:.1f}°")
+        signed_angle = sign * angle_deg
+        normalized_angle = (signed_angle + 360.0) % 360.0
+        # UI uses normalized angle first, while still showing legacy signed angle.
+        text = self.scene.addText(f"{normalized_angle:.1f}° (0-360)\n{signed_angle:.1f}° (signed)")
         text.setDefaultTextColor(Qt.GlobalColor.red)
         text.setPos(lx, ly)
         text.setZValue(30)
