@@ -172,23 +172,7 @@ class PathPlanner:
                         self.last_deviation_angle_360 = (self.last_deviation_signed_angle + 360.0) % 360.0
                         self.last_deviation_dot = dot
                         self._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, signed)
-                        # Publish deviation over MQTT in [0, 360).
-                        try:
-                            if self._angle_publisher is None:
-                                self._angle_publisher = AnglePublisher()
-                            # ensure publisher sends to the Home deviation topic
-                            try:
-                                self._angle_publisher.topic = get_topic("xoay")
-                            except Exception:
-                                pass
-                            # Convert signed angle to heading-like [0, 360) before publishing.
-                            signed_angle = signed * angle_deg
-                            normalized_angle = (signed_angle + 360.0) % 360.0
-                            normalized_angle_val = float(round(normalized_angle, 3))
-                            # send minimal JSON payload similar to robot/location/waypoints structures
-                            self._angle_publisher.publish_angle({"angle": normalized_angle_val})
-                        except Exception as e:
-                            print(f"MQTT publish failed: {e}")
+                        # Do not publish here: this angle is path-predicted, not real robot heading at arrival.
             except Exception as ex:
                 print(f"Error computing/drawing angle: {ex}")
             print(f"Route tối ưu: {' -> '.join(path_node_names)}")

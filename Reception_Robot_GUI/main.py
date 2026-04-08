@@ -217,16 +217,24 @@ class MainWindow(QMainWindow):
                 print("⏱ Start 10s auto return timer")
                 self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
-            # If we just arrived at Home, compute deviation angle vs reference wp14 and draw it
-            try:
-                if self.last_goal == self.HOME_NAME:
+            # If we just arrived at Home, compute deviation using real heading vs Home->wp14 (0-degree reference).
+            if self.last_goal == self.HOME_NAME:
+                try:
                     planner = self.admin_location_tab.planner
-                    path = getattr(self.admin_location_tab, 'last_planned_path', None)
-                    # Need at least one previous point before Home
-                    if path and len(path) >= 2 and 'wp14' in planner.waypoints:
-                        home_pt = np.array(planner.all_nodes['Home'])
-                        prev_pt = np.array(path[-2])
-                        wp14_pt = np.array(planner.waypoints['wp14'])
+                    if 'wp14' in planner.waypoints and 'Home' in planner.all_nodes:
+                        home_pt = np.array(planner.all_nodes['Home'], dtype=float)
+                        wp14_pt = np.array(planner.waypoints['wp14'], dtype=float)
+
+                        heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
+                        if heading_deg is None:
+                            theta_now = float(self.admin_location_tab.last_position[2])
+                            heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
+
+                        # Build a synthetic incoming point from current heading so we can reuse planner math/visualization.
+                        heading_rad = np.deg2rad(float(heading_deg))
+                        heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+                        prev_pt = home_pt - heading_vec * 80.0
+
                         angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp14_pt)
                         planner.last_deviation_angle = angle_deg
                         planner.last_deviation_sign = sign
@@ -234,24 +242,23 @@ class MainWindow(QMainWindow):
                         planner.last_deviation_angle_360 = (planner.last_deviation_signed_angle + 360.0) % 360.0
                         planner.last_deviation_dot = dot
                         planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
+
+                        normalized_angle = int(planner.last_deviation_angle_360)
+                        pub = AnglePublisher()
+                        try:
+                            pub.topic = get_topic("xoay")
+                        except Exception:
+                            pass
+                        pub.publish_angle(normalized_angle)
+
                         print(
-                            f"[ARRIVAL] Deviation angle at Home: "
+                            f"[ARRIVAL] Heading deviation at Home: "
                             f"signed={planner.last_deviation_signed_angle:.1f}°, "
-                            f"angle_360={planner.last_deviation_angle_360:.1f}°"
+                            f"angle_360={planner.last_deviation_angle_360:.1f}°, "
+                            f"published={normalized_angle}"
                         )
-            except Exception as e:
-                print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
-                try:    
-                    pub = AnglePublisher()
-                    try:
-                        pub.topic = get_topic("xoay")
-                    except Exception:
-                        pass
-                    signed_angle = sign * angle_deg
-                    normalized_angle = float(round((signed_angle + 360.0) % 360.0, 3))
-                    pub.publish_angle({"angle": normalized_angle})
                 except Exception as e:
-                    print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
+                    print(f"[MQTT ANGLE] Compute/publish on arrival failed: {e}")
 
     # ================= AUTO RETURN =================
     def auto_return_home(self):

@@ -9,12 +9,14 @@ class AnglePublisher(MQTTTemplate):
         self.topic = get_topic("deviation")
 
     def publish_angle(self, payload):
-        """Publish a dict or JSON-serializable payload containing angle info."""
+        """Publish angle as plain integer payload in [0, 359]."""
         try:
             if isinstance(payload, dict) and "angle" in payload:
                 angle_value = float(payload["angle"])
-                payload = dict(payload)
-                payload["angle"] = angle_value % 360.0
+            else:
+                angle_value = float(payload)
+
+            payload = int(angle_value % 360.0)
             self.publish_and_exit(self.topic, payload, delay=self.delay)
             print("Published deviation successfully!")
         except Exception as e:
