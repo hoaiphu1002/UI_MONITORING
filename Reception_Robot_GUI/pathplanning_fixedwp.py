@@ -181,12 +181,12 @@ class PathPlanner:
                                 self._angle_publisher.topic = get_topic("xoay")
                             except Exception:
                                 pass
-                            # Convert signed angle to heading-like [0, 360) before publishing.
+                            # Convert signed angle to integer heading-like [0, 360) before publishing.
                             signed_angle = signed * angle_deg
                             normalized_angle = (signed_angle + 360.0) % 360.0
-                            normalized_angle_val = float(round(normalized_angle, 3))
-                            # send minimal JSON payload similar to robot/location/waypoints structures
-                            self._angle_publisher.publish_angle({"angle": normalized_angle_val})
+                            normalized_angle_val = int(normalized_angle)
+                            # Publish plain integer payload for robot/xoay.
+                            self._angle_publisher.publish_angle(normalized_angle_val)
                         except Exception as e:
                             print(f"MQTT publish failed: {e}")
             except Exception as ex:

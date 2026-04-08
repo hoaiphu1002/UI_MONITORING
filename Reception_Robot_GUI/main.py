@@ -248,8 +248,8 @@ class MainWindow(QMainWindow):
                     except Exception:
                         pass
                     signed_angle = sign * angle_deg
-                    normalized_angle = float(round((signed_angle + 360.0) % 360.0, 3))
-                    pub.publish_angle({"angle": normalized_angle})
+                    normalized_angle = int((signed_angle + 360.0) % 360.0)
+                    pub.publish_angle(normalized_angle)
                 except Exception as e:
                     print(f"[MQTT ANGLE] Publish on arrival failed: {e}")
 
