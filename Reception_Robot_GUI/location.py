@@ -257,10 +257,20 @@ class LocationTab(QWidget):
             
         curx, cury, _ = self.last_position
         current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
-        self.full_plan_points = [current_wp] + self.plan_points
+        self.full_plan_points = self._dedupe_consecutive_waypoints([current_wp] + self.plan_points)
 
         self.logger.start_logging(self.full_plan_points)
 
         waypoints_json = json.dumps(self.full_plan_points, indent=2)
         publisher = WaypointsPublisher()
         publisher.publish_waypoints(waypoints_json)
+
+    def _dedupe_consecutive_waypoints(self, points):
+        deduped = []
+        last_point = None
+        for point in points:
+            current_point = (point["x"], point["y"])
+            if current_point != last_point:
+                deduped.append(point)
+                last_point = current_point
+        return deduped
