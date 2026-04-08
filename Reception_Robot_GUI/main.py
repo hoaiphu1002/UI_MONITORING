@@ -244,18 +244,21 @@ class MainWindow(QMainWindow):
                         planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
 
                         normalized_angle = int(planner.last_deviation_angle_360)
-                        pub = AnglePublisher()
-                        try:
-                            pub.topic = get_topic("xoay")
-                        except Exception:
-                            pass
-                        pub.publish_angle(normalized_angle)
+                        def _publish_xoay_angle():
+                            pub = AnglePublisher()
+                            try:
+                                pub.topic = get_topic("xoay")
+                            except Exception:
+                                pass
+                            pub.publish_angle(normalized_angle)
+
+                        QTimer.singleShot(10000, _publish_xoay_angle)
 
                         print(
                             f"[ARRIVAL] Heading deviation at Home: "
                             f"signed={planner.last_deviation_signed_angle:.1f}°, "
                             f"angle_360={planner.last_deviation_angle_360:.1f}°, "
-                            f"published={normalized_angle}"
+                            f"publish_in=3000ms, value={normalized_angle}"
                         )
                 except Exception as e:
                     print(f"[MQTT ANGLE] Compute/publish on arrival failed: {e}")
