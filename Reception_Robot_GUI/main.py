@@ -252,13 +252,15 @@ class MainWindow(QMainWindow):
                                 pass
                             pub.publish_angle(normalized_angle)
 
-                        QTimer.singleShot(10000, _publish_xoay_angle)
+                        # Publish twice when robot/arrical is true, each publish 5 seconds apart.
+                        QTimer.singleShot(0, _publish_xoay_angle)
+                        QTimer.singleShot(5000, _publish_xoay_angle)
 
                         print(
                             f"[ARRIVAL] Heading deviation at Home: "
                             f"signed={planner.last_deviation_signed_angle:.1f}°, "
                             f"angle_360={planner.last_deviation_angle_360:.1f}°, "
-                            f"publish_in=3000ms, value={normalized_angle}"
+                            f"publish_times=2, interval_ms=5000, value={normalized_angle}"
                         )
                 except Exception as e:
                     print(f"[MQTT ANGLE] Compute/publish on arrival failed: {e}")
