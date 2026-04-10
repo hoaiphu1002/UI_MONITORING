@@ -24,6 +24,8 @@ from camera import CameraController, CameraTab
 from robot_telemetry import PlotTelemetry
 
 from MQTT.publisher_goal import GoalPublisher 
+from MQTT.publisher_angle import AnglePublisher
+from MQTT.mqtt_publisher_config import get_topic
 
 
 class MainWindow(QMainWindow):
@@ -216,6 +218,40 @@ class MainWindow(QMainWindow):
             if self.last_goal != self.HOME_NAME:
                 print("⏱ Start 10s auto return timer")
                 self.auto_return_timer.start(10000)
+
+            # ===== COMPUTE ANGLE DEVIATION AT HOME =====
+            if self.last_goal == self.HOME_NAME:
+                try:
+                    heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
+                    if heading_deg is None:
+                        theta_now = float(self.admin_location_tab.last_position[2])
+                        heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
+
+                    initial_heading = getattr(self.admin_location_tab, 'initial_heading_deg', 0.0)
+                    deviation_angle = (float(heading_deg) - float(initial_heading) + 360.0) % 360.0
+                    normalized_angle = int(deviation_angle)
+
+                    def _publish_xoay_angle():
+                        pub = AnglePublisher()
+                        try:
+                            pub.topic = get_topic("xoay")
+                        except Exception:
+                            pass
+                        pub.publish_angle(normalized_angle)
+
+                    # Publish twice: 1st at 2s, 2nd at 7s (2s + 5s interval)
+                    QTimer.singleShot(2000, _publish_xoay_angle)
+                    QTimer.singleShot(7000, _publish_xoay_angle)
+
+                    print(
+                        f"[ARRIVAL] Heading deviation at Home: "
+                        f"current_heading={float(heading_deg):.1f}°, "
+                        f"initial_heading={float(initial_heading):.1f}°, "
+                        f"deviation={deviation_angle:.1f}°, "
+                        f"publish_1st=2000ms, publish_2nd=7000ms, value={normalized_angle}"
+                    )
+                except Exception as e:
+                    print(f"[MQTT ANGLE] Compute/publish on arrival failed: {e}")
 
     # ================= AUTO RETURN =================
     def auto_return_home(self):

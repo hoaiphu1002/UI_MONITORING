@@ -62,6 +62,7 @@ class LocationTab(QWidget):
         init_y = self.map_origin[1] + (self.map_height - self.home_py) * self.map_resolution
 
         self.last_position = [init_x, init_y, 0.0]
+        self.initial_heading_deg = 0.0  # Mốc góc ban đầu (0 độ)
         self.create_robot()
         self.update_robot_gui()
 
