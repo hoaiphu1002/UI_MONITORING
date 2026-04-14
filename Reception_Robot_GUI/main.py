@@ -1,4 +1,5 @@
 import os, sys, json
+import numpy as np
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
@@ -112,7 +113,7 @@ class MainWindow(QMainWindow):
             self.ui.stackedWidget_2.setCurrentWidget(self.ui.page_control_2)
 
             self.admin_camera_tab = CameraTab(self.ui.camera_2, self.shared_browser)
-
+    
             self.admin_location_tab = LocationTab(self.ui.view_map_2)
             self.admin_location_tab.logger.cte_signal.connect(self.telemetry_tab.update_cte)
 
@@ -187,7 +188,7 @@ class MainWindow(QMainWindow):
             self.ui.btn_goal_F,
             self.ui.btn_goal_G,
             self.ui.btn_goal_H,
-            self.ui.btn_goal_I
+            self.ui.btn_goal_I        
         ]
 
         for btn, name in zip(buttons, goals):
@@ -217,39 +218,53 @@ class MainWindow(QMainWindow):
             # ===== START TIMER =====
             if self.last_goal != self.HOME_NAME:
                 print("⏱ Start 10s auto return timer")
-                self.auto_return_timer.start(10000)
+                self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
-            # ===== COMPUTE ANGLE DEVIATION AT HOME =====
+            # If we just arrived at Home, compute deviation using real heading vs Home->wp14 (0-degree reference).
             if self.last_goal == self.HOME_NAME:
                 try:
-                    heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
-                    if heading_deg is None:
-                        theta_now = float(self.admin_location_tab.last_position[2])
-                        heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
+                    planner = self.admin_location_tab.planner
+                    if 'wp14' in planner.waypoints and 'Home' in planner.all_nodes:
+                        home_pt = np.array(planner.all_nodes['Home'], dtype=float)
+                        wp14_pt = np.array(planner.waypoints['wp14'], dtype=float)
 
-                    initial_heading = getattr(self.admin_location_tab, 'initial_heading_deg', 0.0)
-                    deviation_angle = (float(heading_deg) - float(initial_heading) + 360.0) % 360.0
-                    normalized_angle = int(deviation_angle)
+                        heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
+                        if heading_deg is None:
+                            theta_now = float(self.admin_location_tab.last_position[2])
+                            heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
 
-                    def _publish_xoay_angle():
-                        pub = AnglePublisher()
-                        try:
-                            pub.topic = get_topic("xoay")
-                        except Exception:
-                            pass
-                        pub.publish_angle(normalized_angle)
+                        # Build a synthetic incoming point from current heading so we can reuse planner math/visualization.
+                        heading_rad = np.deg2rad(float(heading_deg))
+                        heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+                        prev_pt = home_pt - heading_vec * 80.0
 
-                    # Publish twice: 1st at 2s, 2nd at 7s (2s + 5s interval)
-                    QTimer.singleShot(2000, _publish_xoay_angle)
-                    QTimer.singleShot(7000, _publish_xoay_angle)
+                        angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp14_pt)
+                        planner.last_deviation_angle = angle_deg
+                        planner.last_deviation_sign = sign
+                        planner.last_deviation_signed_angle = sign * angle_deg
+                        planner.last_deviation_angle_360 = (planner.last_deviation_signed_angle + 360.0) % 360.0
+                        planner.last_deviation_dot = dot
+                        planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
 
-                    print(
-                        f"[ARRIVAL] Heading deviation at Home: "
-                        f"current_heading={float(heading_deg):.1f}°, "
-                        f"initial_heading={float(initial_heading):.1f}°, "
-                        f"deviation={deviation_angle:.1f}°, "
-                        f"publish_1st=2000ms, publish_2nd=7000ms, value={normalized_angle}"
-                    )
+                        normalized_angle = int(planner.last_deviation_angle_360)
+                        def _publish_xoay_angle():
+                            pub = AnglePublisher()
+                            try:
+                                pub.topic = get_topic("xoay")
+                            except Exception:
+                                pass
+                            pub.publish_angle(normalized_angle)
+
+                        # Publish twice when robot/arrical is true, each publish 5 seconds apart.
+                        QTimer.singleShot(0, _publish_xoay_angle)
+                        QTimer.singleShot(5000, _publish_xoay_angle)
+
+                        print(
+                            f"[ARRIVAL] Heading deviation at Home: "
+                            f"signed={planner.last_deviation_signed_angle:.1f}°, "
+                            f"angle_360={planner.last_deviation_angle_360:.1f}°, "
+                            f"publish_times=2, interval_ms=5000, value={normalized_angle}"
+                        )
                 except Exception as e:
                     print(f"[MQTT ANGLE] Compute/publish on arrival failed: {e}")
 
