@@ -23,6 +23,10 @@ class MapGraphicsView(QGraphicsView):
             self.scale(1 / self.zoom_factor, 1 / self.zoom_factor)
 
 class LocationTab(QWidget):
+    def _theta_to_scene_deg(self, theta_rad):
+        """Chuyển đổi góc radian sang độ cho scene (chuẩn hóa về [0, 360))"""
+        deg = np.degrees(theta_rad)
+        return deg % 360
     def __init__(self, view):
         super().__init__()
         self.ui = view
@@ -64,7 +68,19 @@ class LocationTab(QWidget):
         self.last_position = [init_x, init_y, 0.0]
         self.initial_heading_deg = 0.0  # Mốc góc ban đầu (0 độ)
         self.create_robot()
+        self.create_heading_indicator()  # Thêm mũi tên hướng
         self.update_robot_gui()
+    def create_heading_indicator(self):
+        # Tạo heading indicator (mũi tên hướng)
+        self.heading_pen = QPen(QColor(255, 0, 0), 3)
+        self.heading_arrow_brush = QBrush(QColor(255, 0, 0))
+        self.heading_line = self.map_scene.addLine(0, 0, 0, 0, self.heading_pen)
+        self.heading_line.setZValue(110)
+        self.heading_arrow = QGraphicsPolygonItem()
+        self.heading_arrow.setBrush(self.heading_arrow_brush)
+        self.heading_arrow.setPen(QPen(Qt.GlobalColor.transparent, 0))
+        self.heading_arrow.setZValue(111)
+        self.map_scene.addItem(self.heading_arrow)
 
         self.last_planned_path = []
         
@@ -115,6 +131,8 @@ class LocationTab(QWidget):
         self.robot_item.setZValue(100)
         self.robot_w = pixmap.width()
         self.robot_h = pixmap.height()
+        self.robot_item.setTransformOriginPoint(self.robot_w / 2, self.robot_h / 2)
+        self.robot_icon_forward_offset_deg = 90.0  # Nếu icon robot hướng lên trên, chỉnh lại nếu cần
         self.map_scene.addItem(self.robot_item)
 
     # ==========================================
@@ -130,6 +148,14 @@ class LocationTab(QWidget):
         self.robot_pos = (px, py)
         self.robot_item.setPos(px - self.robot_w/2, py - self.robot_h/2)
 
+
+        # --- Vẽ mũi tên hướng robot ---
+        heading_deg = -theta if abs(theta) > 2 * np.pi else -np.degrees(theta)
+        self._update_heading_indicator_arrow(px, py, heading_deg)
+        # Quay hình robot theo hướng thực tế
+        self.robot_item.setRotation(heading_deg + self.robot_icon_forward_offset_deg)
+        # -----------------------------
+
         # Lưu vết đường đi (Trajectory)
         if hasattr(self, 'trajectory_points') and len(self.trajectory_points) > 0:
             current_point = (px, py)
@@ -139,6 +165,31 @@ class LocationTab(QWidget):
                 self.trajectory_points.append(current_point)
                 self.trajectory_times.append(datetime.now())
                 self.update_trajectory()
+
+    def _update_heading_indicator_arrow(self, cx, cy, heading_deg):
+        # Vẽ mũi tên hướng robot
+        line_len = max(self.robot_w, self.robot_h) * 0.9
+        arrow_len = 10.0
+        arrow_half_width = 5.0
+        rad = np.radians(heading_deg)
+
+        tip_x = cx + line_len * np.cos(rad)
+        tip_y = cy + line_len * np.sin(rad)
+        self.heading_line.setLine(cx, cy, tip_x, tip_y)
+
+        base_x = tip_x - arrow_len * np.cos(rad)
+        base_y = tip_y - arrow_len * np.sin(rad)
+        left_x = base_x + arrow_half_width * np.cos(rad + np.pi / 2.0)
+        left_y = base_y + arrow_half_width * np.sin(rad + np.pi / 2.0)
+        right_x = base_x + arrow_half_width * np.cos(rad - np.pi / 2.0)
+        right_y = base_y + arrow_half_width * np.sin(rad - np.pi / 2.0)
+
+        arrow_poly = QPolygonF([
+            QPointF(tip_x, tip_y),
+            QPointF(left_x, left_y),
+            QPointF(right_x, right_y)
+        ])
+        self.heading_arrow.setPolygon(arrow_poly)
 
     def set_location(self, x, y, theta):
         """Hàm này nhận dữ liệu x, y, theta từ MQTT Manager"""

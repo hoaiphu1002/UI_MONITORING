@@ -34,7 +34,11 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+
         apply_custom_fonts(self.ui)
+        # Đặt giá trị mặc định cho label góc lệch để luôn hiển thị trên GUI
+        if hasattr(self.ui, 'label_deviation_angle_2'):
+            self.ui.label_deviation_angle_2.setText("Góc lệch (robot so với đường Home→wp15): --°")
 
         # ===== AUTO RETURN =====
         self.auto_return_timer = QTimer()
@@ -220,13 +224,13 @@ class MainWindow(QMainWindow):
                 print("⏱ Start 10s auto return timer")
                 self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
-            # If we just arrived at Home, compute deviation using real heading vs Home->wp14 (0-degree reference).
+            # If we just arrived at Home, compute deviation using real heading vs Home->wp15 (0-degree reference).
             if self.last_goal == self.HOME_NAME:
                 try:
                     planner = self.admin_location_tab.planner
-                    if 'wp14' in planner.waypoints and 'Home' in planner.all_nodes:
+                    if 'wp15' in planner.waypoints and 'Home' in planner.all_nodes:
                         home_pt = np.array(planner.all_nodes['Home'], dtype=float)
-                        wp14_pt = np.array(planner.waypoints['wp14'], dtype=float)
+                        wp15_pt = np.array(planner.waypoints['wp15'], dtype=float)
 
                         heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
                         if heading_deg is None:
@@ -238,15 +242,23 @@ class MainWindow(QMainWindow):
                         heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
                         prev_pt = home_pt - heading_vec * 80.0
 
-                        angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp14_pt)
+
+                        angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp15_pt)
                         planner.last_deviation_angle = angle_deg
                         planner.last_deviation_sign = sign
                         planner.last_deviation_signed_angle = sign * angle_deg
                         planner.last_deviation_angle_360 = (planner.last_deviation_signed_angle + 360.0) % 360.0
                         planner.last_deviation_dot = dot
-                        planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
-
                         normalized_angle = int(planner.last_deviation_angle_360)
+                        planner._draw_angle_visual(prev_pt, home_pt, wp15_pt, angle_deg, sign, normalized_angle)
+
+                        # Hiển thị góc lệch lên GUI
+                        if hasattr(self.ui, 'label_deviation_angle_2'):
+                            self.ui.label_deviation_angle_2.setText(f"Xoay (robot so với đường Home→wp15): {normalized_angle}°")
+                            font = self.ui.label_deviation_angle_2.font()
+                            font.setPointSize(12)
+                            self.ui.label_deviation_angle_2.setFont(font)
+
                         def _publish_xoay_angle():
                             pub = AnglePublisher()
                             try:

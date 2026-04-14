@@ -3,10 +3,47 @@ import networkx as nx
 import json
 import math
 from datetime import datetime
-from PyQt6.QtGui import QPen, QColor, QBrush
+from PyQt6.QtGui import QPen, QColor, QBrush, QFont
 from PyQt6.QtCore import Qt
 
 class PathPlanner:
+    def _draw_angle_visual(self, prev, center, next, angle_deg, sign, normalized_angle=None):
+        """Vẽ visual hóa góc lệch giữa 3 điểm trên scene và hiển thị giá trị góc lệch ngay trên bản đồ."""
+        # Xóa các item cũ nếu cần (nếu bạn muốn clear)
+        pen1 = QPen(QColor(0, 0, 255), 2)
+        pen2 = QPen(QColor(0, 200, 0), 2)
+        # Đoạn prev-center
+        self.scene.addLine(prev[0], prev[1], center[0], center[1], pen1)
+        # Đoạn center-next
+        self.scene.addLine(center[0], center[1], next[0], next[1], pen2)
+        # Hiển thị giá trị góc lệch ngay trên bản đồ
+        from PyQt6.QtWidgets import QGraphicsTextItem
+        # Xóa text cũ nếu có
+        if hasattr(self, '_angle_text_item') and self._angle_text_item is not None:
+            self.scene.removeItem(self._angle_text_item)
+        # Hiển thị text tại vị trí Home
+        text = f"Góc lệch: {normalized_angle if normalized_angle is not None else int(angle_deg)}°"
+        self._angle_text_item = QGraphicsTextItem(text)
+        self._angle_text_item.setDefaultTextColor(QColor(255, 0, 0))
+        self._angle_text_item.setFont(QFont("Roboto", 7, QFont.Weight.Bold))
+        self._angle_text_item.setPos(center[0]+10, center[1]-30)
+        self.scene.addItem(self._angle_text_item)
+    def _compute_angle_between(self, prev, center, next):
+        """Tính góc (độ), dấu (xoay trái/phải), dot product giữa 3 điểm."""
+        v1 = np.array(center) - np.array(prev)
+        v2 = np.array(next) - np.array(center)
+        norm1 = np.linalg.norm(v1)
+        norm2 = np.linalg.norm(v2)
+        if norm1 < 1e-6 or norm2 < 1e-6:
+            return 0.0, 1, 1.0
+        v1n = v1 / norm1
+        v2n = v2 / norm2
+        dot = np.clip(np.dot(v1n, v2n), -1.0, 1.0)
+        angle = np.arccos(dot)
+        cross = v1n[0]*v2n[1] - v1n[1]*v2n[0]
+        sign = 1 if cross >= 0 else -1
+        angle_deg = np.degrees(angle)
+        return angle_deg, sign, dot
     def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B2_config_wp.json"):
         self.scene = scene
         self.path_items = []
