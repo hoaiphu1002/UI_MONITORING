@@ -14,16 +14,16 @@
 
   "goals": {
     "Home": [121, 476], 
-    "Thư viện": [120, 402],
-    "Sân banh": [148, 628],
+    "Library": [120, 402],
+    "Football court": [148, 628],
 
-    "Phòng họp": [200, 169],
-    "Nhà vệ sinh": [265, 167],
-    "PTN vi sinh": [423, 168], 
+    "Meeting Room": [200, 169],
+    "Restroom": [265, 167],
+    "Biological Lab": [423, 168], 
     
     "Lab CEPP": [630, 152], 
     "Home 2": [944, 468],
-    "PTN hóa lý": [558, 448]
+    "Chemistry Lab": [558, 448]
   },  
 
   "connections": {
@@ -31,23 +31,23 @@
     "wp2": ["wp1", "wp3"],
     "wp3": ["wp2", "wp4"],
     "wp4": ["wp3", "wp5"],
-    "wp5": ["wp4", "Phòng họp", "Nhà vệ sinh"],
+    "wp5": ["wp4", "Meeting Room", "Restroom"],
 
     "wp11": ["wp12", "Home 2"],
     "wp12": ["wp11", "wp13"],
-    "wp13": ["wp12", "wp14", "PTN hóa lý"],
-    "wp14": ["wp1", "wp13", "PTN hóa lý"],
+    "wp13": ["wp12", "wp14", "Chemistry Lab"],
+    "wp14": ["wp1", "wp13", "Chemistry Lab"],
 
-    "Home": ["wp1", "Thư viện", "Sân banh"],
-    "Thư viện": ["Home"],
-    "Sân banh": ["Home"],
+    "Home": ["wp1", "Library", "Football court"],
+    "Library": ["Home"],
+    "Football court": ["Home"],
 
-    "Phòng họp": ["wp5","Nhà vệ sinh"],
-    "Nhà vệ sinh": ["wp5", "Phòng họp", "PTN vi sinh"],
-    "PTN vi sinh": ["Nhà vệ sinh", "Lab CEPP"],
+    "Meeting Room": ["wp5", "Restroom"],
+    "Restroom": ["wp5", "Meeting Room", "Biological Lab"],
+    "Biological Lab": ["Restroom", "Lab CEPP"],
     
-    "Lab CEPP": ["PTN vi sinh"],
+    "Lab CEPP": ["Biological Lab"],
     "Home 2": ["wp11"],
-    "PTN hóa lý": ["wp13", "wp14"]
+    "Chemistry Lab": ["wp13", "wp14"]
   }
 }

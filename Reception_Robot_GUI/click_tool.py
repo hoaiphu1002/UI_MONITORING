@@ -43,17 +43,27 @@ class MapClickView(QGraphicsView):
         print("Click lên bản đồ để lấy tọa độ pixel")
         # Danh sách cần chuyển đổi
         my_pixels = {
-            "Home": [121, 476], 
-            "Thư viện": [120, 402],
-            "Sân banh": [148, 628],
-
-            "Phòng họp": [200, 169],
-            "Nhà vệ sinh": [265, 167],
-            "PTN vi sinh": [423, 168], 
-            
-            "Lab CEPP": [630, 152], 
+            # Goals
+            "Home": [121, 476],
+            "Library": [120, 402],
+            "Football court": [148, 628],
+            "Meeting Room": [200, 169],
+            "Restroom": [265, 167],
+            "Biological Lab": [423, 168],
+            "Lab CEPP": [630, 152],
             "Home 2": [944, 468],
-            "PTN hóa lý": [558, 448]
+            "Chemistry Lab": [558, 448],
+            # Waypoints
+            "wp1": [210, 466],
+            "wp2": [209, 446],
+            "wp3": [201, 376],
+            "wp4": [198, 289],
+            "wp5": [194, 196],
+            "wp11": [937, 439],
+            "wp12": [863, 438],
+            "wp13": [742, 440],
+            "wp14": [416, 460],
+            "wp15": [150, 476]
         }
         
         print("\n=== ĐANG CHUYỂN ĐỔI DANH SÁCH GOALS ===")
