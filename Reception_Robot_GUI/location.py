@@ -8,6 +8,7 @@ from datetime import datetime
 from pathplanning_fixedwp import PathPlanner
 from logger import PathLogger
 from MQTT.publisher_waypoints import WaypointsPublisher
+from MQTT.publisher_speed import SpeedPublisher
 
 class MapGraphicsView(QGraphicsView):
     def __init__(self, parent=None):
@@ -195,6 +196,33 @@ class LocationTab(QWidget):
         """Hàm này nhận dữ liệu x, y, theta từ MQTT Manager"""
         self.last_position = [x, y, theta]
 
+        # --- Kiểm tra và cập nhật tốc độ nếu gần điểm nguy hiểm ---
+        try:
+            from MQTT.publisher_speed import SpeedPublisher
+            speed_publisher = SpeedPublisher()
+            # Danh sách toạ độ nguy hiểm (theo mét)
+            danger_points = [
+                (3.94, 4.946),  # wp3
+                (3.79, 9.296),  # wp4
+                (3.59, 13.946), # ví dụ thêm các điểm khác nếu cần
+                (7.14, 15.396), # restroom
+                (3.89, 15.295839), # meeting room
+                # ... thêm các điểm nguy hiểm khác nếu cần
+            ]
+            speed = 1.0
+            print("[DEBUG] --- Danger Points Check ---")
+            print(f"[DEBUG] Robot location: x={x}, y={y}")
+            for gx, gy in danger_points:
+                dist = np.linalg.norm(np.array([x, y]) - np.array([gx, gy]))
+                print(f"[DEBUG] Danger point: ({gx},{gy}), dist={dist}")
+                if dist < 1.0:
+                    speed = 0.5
+                    print(f"[DEBUG] ==> Robot NEAR danger point: ({gx},{gy}), speed set 0.5")
+                    break
+            speed_publisher.publish_speed(speed)
+        except Exception as e:
+            print(f"[LocationTab] Speed publish error: {e}")
+
     # ... (Các hàm clear_trajectory, update_trajectory, plan_path giữ nguyên như cũ)
     def clear_trajectory(self):
         for item in self.trajectory_items:
@@ -221,7 +249,16 @@ class LocationTab(QWidget):
         if len(self.last_planned_path) >= 2:
             # Điểm áp chót của lần chạy trước chính là "hướng đi tới" của robot
             ref_point = self.last_planned_path[-2]
-            
+
+        # Gửi tốc độ 1.0 khi bắt đầu hoạch định đường đi
+        try:
+            from MQTT.publisher_speed import SpeedPublisher
+            speed_publisher = SpeedPublisher()
+            speed_publisher.publish_speed(1.0)
+            print("[DEBUG] Published speed 1.0 at plan_path start")
+        except Exception as e:
+            print(f"[LocationTab] Speed publish error in plan_path: {e}")
+
         self.clear_trajectory()
         self.trajectory_points = []
         self.trajectory_times = []
@@ -239,7 +276,7 @@ class LocationTab(QWidget):
             x = self.map_origin[0] + px * self.map_resolution
             y = self.map_origin[1] + (self.map_height - py) * self.map_resolution
             self.plan_points.append({"x": round(x, 3), "y": round(y, 3)})
-            
+
         curx, cury, _ = self.last_position
         current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
         self.full_plan_points = [current_wp] + self.plan_points

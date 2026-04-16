@@ -83,7 +83,8 @@ class PathLogger(QObject):
 
         # Kiểm tra chuyển đoạn
         dist_to_next = np.hypot(xr - x2, yr - y2)
-        if dist_to_next < self.threshold_to_next and idx + 2 < len(self.full_plan_points):
+        # Nếu robot đã vượt qua điểm tiếp theo (t >= 1) hoặc đến gần điểm tiếp theo thì chuyển đoạn
+        if ((t >= 1.0) or (dist_to_next < self.threshold_to_next)) and idx + 2 < len(self.full_plan_points):
             self.current_segment_idx += 1
 
     def stop_logging(self):
