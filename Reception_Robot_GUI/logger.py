@@ -2,6 +2,9 @@ import csv
 import numpy as np
 from datetime import datetime
 import time
+import pandas as pd
+import math
+import json
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 class PathLogger(QObject):
@@ -66,9 +69,10 @@ class PathLogger(QObject):
         c2 = vx * vx + vy * vy
 
         if c2 == 0:
-            t = 0.0
+            t_raw = 0.0
         else:
-            t = max(0.0, min(1.0, c1 / c2))
+            t_raw = c1 / c2
+        t = max(0.0, min(1.0, t_raw)) # t between 0 and 1
 
         # Điểm chiếu lên đoạn thẳng
         plan_x = x1 + t * vx
@@ -83,8 +87,10 @@ class PathLogger(QObject):
 
         # Kiểm tra chuyển đoạn
         dist_to_next = np.hypot(xr - x2, yr - y2)
-        if dist_to_next < self.threshold_to_next and idx + 2 < len(self.full_plan_points):
-            self.current_segment_idx += 1
+        # pass next wp or close enough to next wp, move to next segment
+        if (t_raw >= 1.0 or dist_to_next < self.threshold_to_next):
+            if self.current_segment_idx + 2 < len(self.full_plan_points):
+                self.current_segment_idx += 1
 
     def stop_logging(self):
         if hasattr(self, 'log_timer') and self.log_timer.isActive():
@@ -130,3 +136,81 @@ class PathLogger(QObject):
         self.log_data = []
         self.current_segment_idx = 0
         self.logging_active = False
+
+
+def get_closest_projection(rx, ry, wps_array):
+    min_error = float('inf')
+    best_px, best_py = rx, ry
+    
+    for i in range(len(wps_array) - 1):
+        x1, y1 = wps_array[i]
+        x2, y2 = wps_array[i+1]
+        
+        vx, vy = x2 - x1, y2 - y1
+        wx, wy = rx - x1, ry - y1
+        
+        c1 = wx * vx + wy * vy
+        c2 = vx * vx + vy * vy
+        
+        if c2 == 0:
+            t = 0.0
+        else:
+            t = max(0.0, min(1.0, c1 / c2))
+            
+        px = x1 + t * vx
+        py = y1 + t * vy
+        
+        dist = math.hypot(rx - px, ry - py)
+        
+        if dist < min_error:
+            min_error = dist
+            best_px = px
+            best_py = py
+            
+    return pd.Series([round(best_px, 3), round(best_py, 3), round(min_error, 3)])
+
+
+def salvage_log_data(input_csv, output_csv, path_json):
+    try:
+        with open(path_json, 'r', encoding='utf-8') as f:
+            wps_data = json.load(f)
+            
+        wps_array = [[point['x'], point['y']] for point in wps_data]
+        
+    except Exception as e:
+        print(f"[ERROR] Cannot read file path JSON: {e}")
+        return
+
+    df_log = pd.read_csv(input_csv)
+    
+    df_log = df_log[~df_log['time'].astype(str).str.contains("Avg error|Max error", case=False, na=False)]
+    
+    df_log['actual_x'] = pd.to_numeric(df_log['actual_x'], errors='coerce')
+    df_log['actual_y'] = pd.to_numeric(df_log['actual_y'], errors='coerce')
+    
+    df_log = df_log.dropna(subset=['actual_x', 'actual_y'])
+
+    df_log[['plan_x', 'plan_y', 'error_m']] = df_log.apply(
+        lambda row: get_closest_projection(row['actual_x'], row['actual_y'], wps_array), 
+        axis=1
+    )
+    
+    df_log.to_csv(output_csv, index=False)
+    
+    mean_err = df_log['error_m'].mean()
+    max_err = df_log['error_m'].max()
+
+    summary = f"Avg error: {mean_err:.3f}m | Max error: {max_err:.3f}m"
+
+    with open(output_csv, 'a', encoding='utf-8') as f:
+        f.write("\n")         
+        f.write(summary + "\n") 
+    
+    print(f"[SUCCESS] File saved: {output_csv}")
+    print(summary)
+
+if __name__ == "__main__":
+    input_file = "log_path/path_comparison_B2_14_4.csv"        
+    output_file = "log_path/path_comparison_B2_14_4_fixed.csv" 
+    path_file = "log_path/waypoints.json"
+    salvage_log_data(input_file, output_file, path_file)
