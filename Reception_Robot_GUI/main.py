@@ -197,12 +197,17 @@ class MainWindow(QMainWindow):
         goal_json = json.dumps(place)
         print(f"Goal: {goal_json}")
 
+        # Không đo và gửi góc xoay ở đây nữa, chỉ gửi goal
         publisher = GoalPublisher()
         publisher.publish_goal(goal_json)
 
         # ===== AUTO RETURN =====
         self.last_goal = place
         self.auto_return_timer.stop()  # reset timer
+
+        # Đánh dấu trạng thái vừa gửi goal, chờ arrival mới cho phép xoay tiếp
+        self._pending_rotation = place
+
 
     # ================= ARRIVAL =================
     def handle_arrival_signal(self, arrived):
@@ -217,82 +222,54 @@ class MainWindow(QMainWindow):
                 print("⏱ Start 10s auto return timer")
                 self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
-            # Nếu không phải về Home thì kiểm tra hướng đi tiếp theo
-
-            try:
+            # Nếu vừa arrival xong và có pending rotation (tức là vừa gửi goal mới)
+            if hasattr(self, '_pending_rotation') and self._pending_rotation:
+                place = self._pending_rotation
                 planner = self.admin_location_tab.planner
-                # Lấy danh sách goals hiện tại
                 goal_names = list(self.admin_location_tab.goals.keys())
-                if self.last_goal in goal_names:
-                    idx = goal_names.index(self.last_goal)
-                    # Lấy điểm trước, điểm hiện tại (goal), điểm tiếp theo nếu có
-                    prev_goal = goal_names[idx - 1] if idx > 0 else None
-                    next_goal = goal_names[idx + 1] if idx + 1 < len(goal_names) else None
-                    current_pos = np.array(self.admin_location_tab.goals[self.last_goal], dtype=float)
-                    prev_pos = np.array(self.admin_location_tab.goals[prev_goal], dtype=float) if prev_goal else None
-                    next_pos = np.array(self.admin_location_tab.goals[next_goal], dtype=float) if next_goal else None
-
-                    # Vector hướng từ điểm trước đến goal hiện tại
-                    if prev_pos is not None:
-                        vec_prev = current_pos - prev_pos
-                        vec_prev_norm = vec_prev / (np.linalg.norm(vec_prev) + 1e-8)
-                    else:
-                        vec_prev = None
-                        vec_prev_norm = None
-
-                    # Vector hướng từ goal hiện tại đến goal tiếp theo
-                    if next_pos is not None:
-                        vec_next = next_pos - current_pos
-                        vec_next_norm = vec_next / (np.linalg.norm(vec_next) + 1e-8)
-                    else:
-                        vec_next = None
-                        vec_next_norm = None
-
-                    # Hướng hiện tại của robot
-                    heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
-                    if heading_deg is None:
-                        theta_now = float(self.admin_location_tab.last_position[2])
-                        heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
-                    heading_rad = np.deg2rad(float(heading_deg))
-                    heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
-
-
-                    # Chỉ in góc giữa hướng robot và hướng đi tiếp theo (chuẩn tích vô hướng)
-                    if vec_next_norm is not None:
-                        dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
-                        angle = np.arccos(dot) * 180.0 / np.pi
-                        cross = np.cross(heading_vec, vec_next_norm)
-                        sign = np.sign(cross)
-                        signed_angle = angle * sign
-                        print(f"[ARRIVAL] heading_vec: {heading_vec}")
-                        print(f"[ARRIVAL] vec_next_norm: {vec_next_norm}")
-                        print(f"[ARRIVAL] dot (tích vô hướng): {dot}")
-                        print(f"[ARRIVAL] angle (arccos(dot)): {angle:.2f}°")
-                        print(f"[ARRIVAL] cross (tích có hướng): {cross}")
-                        print(f"[ARRIVAL] sign: {sign}")
-                        print(f"[ARRIVAL] signed_angle: {signed_angle:.2f}°")
-                        # Chuẩn hóa về 0-359° để gửi cho robot/xoay
-                        angle_to_publish = int((signed_angle + 360.0) % 360.0)
-                        print(f"[ARRIVAL] angle_to_publish (0-359): {angle_to_publish}°")
-                        print(f"[ARRIVAL] Góc giữa hướng robot và hướng đến goal tiếp theo: {signed_angle:.1f}° (abs={abs(signed_angle):.1f}°)")
-
-                        ANGLE_THRESHOLD = 20.0  # Độ lệch cho phép
-                        if abs(signed_angle) > ANGLE_THRESHOLD:
-                            # Gửi lệnh xoay với góc dương 0-359° (chiều ngắn nhất)
-                            def _publish_xoay_angle():
-                                pub = AnglePublisher()
-                                try:
-                                    pub.topic = get_topic("xoay")
-                                except Exception:
-                                    pass
-                                pub.publish_angle(angle_to_publish)
-                            QTimer.singleShot(0, _publish_xoay_angle)
-                            print(f"[ARRIVAL] Publish xoay: {angle_to_publish}° (0-359, chiều ngắn nhất) để hướng về goal tiếp theo")
-                            # Có thể cần chờ tín hiệu robot đã xoay xong, ở đây chỉ gửi lệnh xoay 1 lần
-                            return  # Chờ lần arrival tiếp theo hoặc xác nhận đã xoay xong mới đi tiếp
-
-            except Exception as e:
-                print(f"[ARRIVAL] Angle to next goal failed: {e}")
+                if place in goal_names:
+                    idx = goal_names.index(place)
+                    if idx + 1 < len(goal_names):
+                        next_goal = goal_names[idx + 1]
+                        if next_goal != self.HOME_NAME:
+                            try:
+                                current_pos = np.array(self.admin_location_tab.goals[place], dtype=float)
+                                next_pos = np.array(self.admin_location_tab.goals[next_goal], dtype=float)
+                                vec_next = next_pos - current_pos
+                                vec_next_norm = vec_next / (np.linalg.norm(vec_next) + 1e-8)
+                                heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
+                                if heading_deg is None:
+                                    theta_now = float(self.admin_location_tab.last_position[2])
+                                    heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
+                                heading_rad = np.deg2rad(float(heading_deg))
+                                heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+                                dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
+                                angle = np.arccos(dot) * 180.0 / np.pi
+                                cross = np.cross(heading_vec, vec_next_norm)
+                                sign = np.sign(cross)
+                                signed_angle = angle * sign
+                                print(f"[WAYPOINT] heading_vec: {heading_vec}")
+                                print(f"[WAYPOINT] vec_next_norm: {vec_next_norm}")
+                                print(f"[WAYPOINT] signed_angle: {signed_angle:.2f}°")
+                                ANGLE_THRESHOLD = 20.0
+                                if abs(signed_angle) > ANGLE_THRESHOLD:
+                                    if signed_angle < 0:
+                                        angle_to_publish = int(360-abs(signed_angle))
+                                    else:
+                                        angle_to_publish = int(signed_angle)
+                                    def _publish_xoay_angle():
+                                        pub = AnglePublisher()
+                                        try:
+                                            pub.topic = get_topic("xoay")
+                                        except Exception:
+                                            pass
+                                        pub.publish_angle(angle_to_publish)
+                                    QTimer.singleShot(0, _publish_xoay_angle)
+                                    print(f"[WAYPOINT] Publish xoay: {angle_to_publish}° (0-359, luôn quay phải) để hướng về waypoint {next_goal}")
+                            except Exception as e:
+                                print(f"[WAYPOINT] Angle to waypoint failed: {e}")
+                # Xoay xong thì clear pending
+                self._pending_rotation = None
 
             # Nếu về Home thì vẫn giữ logic cũ
             if self.last_goal == self.HOME_NAME:
