@@ -1,0 +1,4 @@
+time,actual_x,actual_y,plan_x,plan_y,error_m
+2026-04-28 12:55:56.275,17.944,20.662,17.935,20.653,0.013
+
+Avg error: 0.013m | Max error: 0.013m
