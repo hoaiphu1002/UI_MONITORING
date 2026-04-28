@@ -263,9 +263,20 @@ class MainWindow(QMainWindow):
                         print(f"[ARRIVAL] cross (tích có hướng): {cross}")
                         print(f"[ARRIVAL] sign: {sign}")
                         print(f"[ARRIVAL] signed_angle: {signed_angle:.2f}°")
-                        angle_to_publish = int((signed_angle + 360.0) % 360.0)
+                        # Triệt để: làm tròn signed_angle trước khi chuẩn hóa, nếu gần 0 hoặc 360 thì xuất 0
+                        if abs(signed_angle) < 1.0:
+                            angle_to_publish = 0
+                        else:
+                            angle_to_publish = int((signed_angle + 360.0) % 360.0)
                         print(f"[ARRIVAL] angle_to_publish (0-359): {angle_to_publish}°")
                         print(f"[ARRIVAL] Góc giữa hướng robot và hướng đến waypoint tiếp theo: {signed_angle:.1f}° (abs={abs(signed_angle):.1f}°)")
+
+                        # Đảm bảo không có dòng nào thay đổi angle_to_publish sau kiểm tra này
+                        if abs(signed_angle) < 1.0:
+                            angle_to_publish = 0
+                        else:
+                            angle_to_publish = int((signed_angle + 360.0) % 360.0)
+                        print(f"[AUTO_XOAY] signed_angle: {signed_angle:.2f}° | angle_to_publish: {angle_to_publish}°")
 
                         # Luôn gửi lệnh xoay, không kiểm tra ANGLE_THRESHOLD
                         def _publish_xoay_angle():
@@ -275,8 +286,10 @@ class MainWindow(QMainWindow):
                             except Exception:
                                 pass
                             pub.publish_angle(angle_to_publish)
+                        # Gửi 2 lần, mỗi lần cách nhau 2s (2000ms)
                         QTimer.singleShot(0, _publish_xoay_angle)
-                        print(f"[ARRIVAL] Publish xoay: {angle_to_publish}° (0-359, chiều ngắn nhất) để hướng về waypoint tiếp theo")
+                        QTimer.singleShot(2000, _publish_xoay_angle)
+                        print(f"[AUTO_XOAY] Publish xoay: {angle_to_publish}° (0-359, chiều ngắn nhất, gửi 2 lần cách 2s)")
                         return
             except Exception as e:
                 print(f"[ARRIVAL] Angle to next waypoint failed: {e}")
@@ -315,8 +328,10 @@ class MainWindow(QMainWindow):
                                 pass
                             pub.publish_angle(normalized_angle)
 
+
+                        # Gửi 2 lần, mỗi lần cách nhau 2s (2000ms)
                         QTimer.singleShot(0, _publish_xoay_angle)
-                        QTimer.singleShot(5000, _publish_xoay_angle)
+                        QTimer.singleShot(2000, _publish_xoay_angle)
 
                         print(
                             f"[ARRIVAL] Heading deviation at Home: "

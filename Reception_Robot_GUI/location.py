@@ -290,7 +290,10 @@ class LocationTab(QWidget):
                 cross = np.cross(heading_vec, vec_next_norm)
                 sign = np.sign(cross)
                 signed_angle = angle * sign
-                angle_to_publish = int((signed_angle + 360.0) % 360.0)
+                if abs(signed_angle) < 1.0:
+                    angle_to_publish = 0
+                else:
+                    angle_to_publish = int((signed_angle + 360.0) % 360.0)
                 print(f"[AUTO_XOAY] Robot pos: ({curx:.3f}, {cury:.3f})")
                 print(f"[AUTO_XOAY] Next WP: {wp_next}")
                 print(f"[AUTO_XOAY] heading_deg: {heading_deg}")
