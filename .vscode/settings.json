@@ -72,5 +72,6 @@
         "source_location": "cpp",
         "future": "cpp",
         "variant": "cpp"
-    }
+    },
+    "python-envs.defaultEnvManager": "ms-python.python:venv"
 }

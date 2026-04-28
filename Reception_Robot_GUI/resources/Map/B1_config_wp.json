@@ -13,9 +13,9 @@
   },
   "goals": {
     "Restroom": [717, 505],
-    "Water intake": [736, 269],
+    "Water intake": [745, 269],
     "Home": [825, 394],
-    "Chemistry hall": [835, 269],
+    "Chemistry hall": [850, 269],
     "Robotics lab": [464, 792],
     "Stairs": [820, 727],
     "Electrical lab": [1116, 778]

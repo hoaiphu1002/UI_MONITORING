@@ -246,6 +246,7 @@ class LocationTab(QWidget):
         self.trajectory_times.append(datetime.now())
 
         self.planned_path = self.planner.find_path(self.robot_pos, goal, ref_point)
+        print(f"[DEBUG] planned_path (pixel): {self.planned_path}")
         self.planner.draw_path(self.planned_path)
         self.last_planned_path = self.planned_path
         self.plan_points = []
@@ -254,16 +255,63 @@ class LocationTab(QWidget):
             x = self.map_origin[0] + px * self.map_resolution
             y = self.map_origin[1] + (self.map_height - py) * self.map_resolution
             self.plan_points.append({"x": round(x, 3), "y": round(y, 3)})
-            
+
         curx, cury, _ = self.last_position
         current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
         self.full_plan_points = self._dedupe_consecutive_waypoints([current_wp] + self.plan_points)
+        print(f"[DEBUG] full_plan_points (m): {self.full_plan_points}")
 
         self.logger.start_logging(self.full_plan_points)
 
         waypoints_json = json.dumps(self.full_plan_points, indent=2)
         publisher = WaypointsPublisher()
         publisher.publish_waypoints(waypoints_json)
+
+        # --- TÍNH GÓC XOAY NGAY SAU KHI LẬP ROUTE MỚI ---
+        try:
+            if len(self.full_plan_points) >= 2:
+                curx, cury, _ = self.last_position
+                wp_next = self.full_plan_points[1]
+                vec_next = np.array([wp_next['x'] - curx, wp_next['y'] - cury], dtype=float)
+                norm = np.linalg.norm(vec_next) + 1e-8
+                vec_next_norm = vec_next / norm
+
+                # Hướng hiện tại của robot
+                heading_deg = getattr(self, '_display_heading_deg', None)
+                if heading_deg is None:
+                    theta_now = float(self.last_position[2])
+                    heading_deg = float(self._theta_to_scene_deg(theta_now))
+                heading_rad = np.deg2rad(float(heading_deg))
+                heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+
+                # Tính góc giữa hướng robot và hướng waypoint tiếp theo
+                dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
+                angle = np.arccos(dot) * 180.0 / np.pi
+                cross = np.cross(heading_vec, vec_next_norm)
+                sign = np.sign(cross)
+                signed_angle = angle * sign
+                angle_to_publish = int((signed_angle + 360.0) % 360.0)
+                print(f"[AUTO_XOAY] Robot pos: ({curx:.3f}, {cury:.3f})")
+                print(f"[AUTO_XOAY] Next WP: {wp_next}")
+                print(f"[AUTO_XOAY] heading_deg: {heading_deg}")
+                print(f"[AUTO_XOAY] heading_vec: {heading_vec}")
+                print(f"[AUTO_XOAY] vec_next_norm: {vec_next_norm}")
+                print(f"[AUTO_XOAY] signed_angle: {signed_angle:.2f}° | angle_to_publish: {angle_to_publish}°")
+                # Gửi lệnh xoay
+                from MQTT.publisher_angle import AnglePublisher
+                from MQTT.mqtt_publisher_config import get_topic
+                def _publish_xoay_angle():
+                    pub = AnglePublisher()
+                    try:
+                        pub.topic = get_topic("xoay")
+                    except Exception:
+                        pass
+                    pub.publish_angle(angle_to_publish)
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, _publish_xoay_angle)
+                print(f"[AUTO_XOAY] Publish xoay: {angle_to_publish}° (0-359, chiều ngắn nhất) để hướng về waypoint tiếp theo")
+        except Exception as e:
+            print(f"[AUTO_XOAY] Error: {e}")
 
     def _dedupe_consecutive_waypoints(self, points):
         deduped = []

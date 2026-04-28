@@ -197,7 +197,6 @@ class MainWindow(QMainWindow):
         goal_json = json.dumps(place)
         print(f"Goal: {goal_json}")
 
-        # Không đo và gửi góc xoay ở đây nữa, chỉ gửi goal
         publisher = GoalPublisher()
         publisher.publish_goal(goal_json)
 
@@ -205,13 +204,10 @@ class MainWindow(QMainWindow):
         self.last_goal = place
         self.auto_return_timer.stop()  # reset timer
 
-        # Đánh dấu trạng thái vừa gửi goal, chờ arrival mới cho phép xoay tiếp
-        self._pending_rotation = place
-
-
     # ================= ARRIVAL =================
     def handle_arrival_signal(self, arrived):
-        if arrived == 1 and hasattr(self, 'admin_location_tab'):
+        print(f"[DEBUG] handle_arrival_signal called with arrived={arrived}")
+        if hasattr(self, 'admin_location_tab'):
             self.ui.robot_mode_2.setCurrentWidget(self.ui.page_6)
             self.admin_location_tab.logger.stop_logging()
             self.ui.robot_status.setText("Idle")
@@ -222,54 +218,68 @@ class MainWindow(QMainWindow):
                 print("⏱ Start 10s auto return timer")
                 self.auto_return_timer.start(10000) # CHỈNH THỜI GIAN CHỜ 
 
-            # Nếu vừa arrival xong và có pending rotation (tức là vừa gửi goal mới)
-            if hasattr(self, '_pending_rotation') and self._pending_rotation:
-                place = self._pending_rotation
-                planner = self.admin_location_tab.planner
-                goal_names = list(self.admin_location_tab.goals.keys())
-                if place in goal_names:
-                    idx = goal_names.index(place)
-                    if idx + 1 < len(goal_names):
-                        next_goal = goal_names[idx + 1]
-                        if next_goal != self.HOME_NAME:
+
+            # SỬA: Tính góc giữa hướng robot và waypoint liền kề (không chỉ điểm đầu/cuối)
+            try:
+                # Lấy danh sách waypoint chi tiết (bao gồm cả trung gian)
+                waypoints = getattr(self.admin_location_tab, 'full_plan_points', None)
+                print(f"[DEBUG] full_plan_points: {waypoints}")
+                if waypoints is not None and len(waypoints) >= 2:
+                    # Lấy vị trí hiện tại của robot
+                    curx, cury, _ = self.admin_location_tab.last_position
+                    print(f"[DEBUG] Robot position: x={curx}, y={cury}")
+                    # Tìm waypoint gần nhất với vị trí hiện tại
+                    dists = [np.hypot(curx - wp['x'], cury - wp['y']) for wp in waypoints]
+                    idx = int(np.argmin(dists))
+                    print(f"[DEBUG] Closest waypoint index: {idx}, point: {waypoints[idx]}")
+                    # Lấy waypoint liền kề tiếp theo (nếu có)
+                    if idx + 1 < len(waypoints):
+                        wp_next = waypoints[idx + 1]
+                        print(f"[DEBUG] Next waypoint: {wp_next}")
+                        # Vector từ robot đến waypoint tiếp theo
+                        vec_next = np.array([wp_next['x'] - curx, wp_next['y'] - cury], dtype=float)
+                        norm = np.linalg.norm(vec_next) + 1e-8
+                        vec_next_norm = vec_next / norm
+
+                        # Hướng hiện tại của robot
+                        heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
+                        if heading_deg is None:
+                            theta_now = float(self.admin_location_tab.last_position[2])
+                            heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
+                        print(f"[DEBUG] heading_deg: {heading_deg}")
+                        heading_rad = np.deg2rad(float(heading_deg))
+                        heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+
+                        # Tính góc giữa hướng robot và hướng waypoint tiếp theo
+                        dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
+                        angle = np.arccos(dot) * 180.0 / np.pi
+                        cross = np.cross(heading_vec, vec_next_norm)
+                        sign = np.sign(cross)
+                        signed_angle = angle * sign
+                        print(f"[ARRIVAL] heading_vec: {heading_vec}")
+                        print(f"[ARRIVAL] vec_next_norm: {vec_next_norm}")
+                        print(f"[ARRIVAL] dot (tích vô hướng): {dot}")
+                        print(f"[ARRIVAL] angle (arccos(dot)): {angle:.2f}°")
+                        print(f"[ARRIVAL] cross (tích có hướng): {cross}")
+                        print(f"[ARRIVAL] sign: {sign}")
+                        print(f"[ARRIVAL] signed_angle: {signed_angle:.2f}°")
+                        angle_to_publish = int((signed_angle + 360.0) % 360.0)
+                        print(f"[ARRIVAL] angle_to_publish (0-359): {angle_to_publish}°")
+                        print(f"[ARRIVAL] Góc giữa hướng robot và hướng đến waypoint tiếp theo: {signed_angle:.1f}° (abs={abs(signed_angle):.1f}°)")
+
+                        # Luôn gửi lệnh xoay, không kiểm tra ANGLE_THRESHOLD
+                        def _publish_xoay_angle():
+                            pub = AnglePublisher()
                             try:
-                                current_pos = np.array(self.admin_location_tab.goals[place], dtype=float)
-                                next_pos = np.array(self.admin_location_tab.goals[next_goal], dtype=float)
-                                vec_next = next_pos - current_pos
-                                vec_next_norm = vec_next / (np.linalg.norm(vec_next) + 1e-8)
-                                heading_deg = getattr(self.admin_location_tab, '_display_heading_deg', None)
-                                if heading_deg is None:
-                                    theta_now = float(self.admin_location_tab.last_position[2])
-                                    heading_deg = float(self.admin_location_tab._theta_to_scene_deg(theta_now))
-                                heading_rad = np.deg2rad(float(heading_deg))
-                                heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
-                                dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
-                                angle = np.arccos(dot) * 180.0 / np.pi
-                                cross = np.cross(heading_vec, vec_next_norm)
-                                sign = np.sign(cross)
-                                signed_angle = angle * sign
-                                print(f"[WAYPOINT] heading_vec: {heading_vec}")
-                                print(f"[WAYPOINT] vec_next_norm: {vec_next_norm}")
-                                print(f"[WAYPOINT] signed_angle: {signed_angle:.2f}°")
-                                ANGLE_THRESHOLD = 20.0
-                                if abs(signed_angle) > ANGLE_THRESHOLD:
-                                    if signed_angle < 0:
-                                        angle_to_publish = int(360-abs(signed_angle))
-                                    else:
-                                        angle_to_publish = int(signed_angle)
-                                    def _publish_xoay_angle():
-                                        pub = AnglePublisher()
-                                        try:
-                                            pub.topic = get_topic("xoay")
-                                        except Exception:
-                                            pass
-                                        pub.publish_angle(angle_to_publish)
-                                    QTimer.singleShot(0, _publish_xoay_angle)
-                                    print(f"[WAYPOINT] Publish xoay: {angle_to_publish}° (0-359, luôn quay phải) để hướng về waypoint {next_goal}")
-                            except Exception as e:
-                                print(f"[WAYPOINT] Angle to waypoint failed: {e}")
-                # Xoay xong thì clear pending
-                self._pending_rotation = None
+                                pub.topic = get_topic("xoay")
+                            except Exception:
+                                pass
+                            pub.publish_angle(angle_to_publish)
+                        QTimer.singleShot(0, _publish_xoay_angle)
+                        print(f"[ARRIVAL] Publish xoay: {angle_to_publish}° (0-359, chiều ngắn nhất) để hướng về waypoint tiếp theo")
+                        return
+            except Exception as e:
+                print(f"[ARRIVAL] Angle to next waypoint failed: {e}")
 
             # Nếu về Home thì vẫn giữ logic cũ
             if self.last_goal == self.HOME_NAME:
