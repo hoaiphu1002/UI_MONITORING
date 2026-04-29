@@ -7,27 +7,44 @@ from PyQt6.QtGui import QPen, QColor, QBrush, QFont
 from PyQt6.QtCore import Qt
 
 class PathPlanner:
+    def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B2_config_wp.json"):
+        self.scene = scene
+        self.path_items = []
+        
+        # Load dữ liệu từ JSON
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            
+        self.waypoints = config['waypoints']
+        self.goals = config['goals']
+        self.connections = config['connections']
+        
+        # Hợp nhất tất cả các điểm
+        self.all_nodes = {**self.waypoints, **self.goals}
+        
+        # Xây dựng Đồ thị điểm (Node Graph) đơn giản
+        self._build_simple_graph()
+        self._draw_fixed_points()
+
     def _draw_angle_visual(self, prev, center, next, angle_deg, sign, normalized_angle=None):
         """Vẽ visual hóa góc lệch giữa 3 điểm trên scene và hiển thị giá trị góc lệch ngay trên bản đồ."""
-        # Xóa các item cũ nếu cần (nếu bạn muốn clear)
         pen1 = QPen(QColor(0, 0, 255), 2)
         pen2 = QPen(QColor(0, 200, 0), 2)
-        # Đoạn prev-center
+        
         self.scene.addLine(prev[0], prev[1], center[0], center[1], pen1)
-        # Đoạn center-next
         self.scene.addLine(center[0], center[1], next[0], next[1], pen2)
-        # Hiển thị giá trị góc lệch ngay trên bản đồ
+        
         from PyQt6.QtWidgets import QGraphicsTextItem
-        # Xóa text cũ nếu có
         if hasattr(self, '_angle_text_item') and self._angle_text_item is not None:
             self.scene.removeItem(self._angle_text_item)
-        # Hiển thị text tại vị trí Home
+            
         text = f"Góc lệch: {normalized_angle if normalized_angle is not None else int(angle_deg)}°"
         self._angle_text_item = QGraphicsTextItem(text)
         self._angle_text_item.setDefaultTextColor(QColor(255, 0, 0))
         self._angle_text_item.setFont(QFont("Roboto", 7, QFont.Weight.Bold))
         self._angle_text_item.setPos(center[0]+10, center[1]-30)
         self.scene.addItem(self._angle_text_item)
+
     def _compute_angle_between(self, prev, center, next):
         """Tính góc (độ), dấu (xoay trái/phải), dot product giữa 3 điểm."""
         v1 = np.array(center) - np.array(prev)
@@ -44,151 +61,82 @@ class PathPlanner:
         sign = 1 if cross >= 0 else -1
         angle_deg = np.degrees(angle)
         return angle_deg, sign, dot
-    def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B2_config_wp.json"):
-        self.scene = scene
-        self.path_items = []
-        
-        # Load dữ liệu từ JSON
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
-            
-        self.waypoints = config['waypoints']
-        self.goals = config['goals']
-        self.connections = config['connections']
-        
-        # Hợp nhất tất cả các điểm
-        self.all_nodes = {**self.waypoints, **self.goals}
-        
-        # --- THIẾT LẬP HỆ SỐ PHẠT ---
-        self.BASE_TURN_PENALTY = 5000.0
-        self.SHARP_TURN_MULTIPLIER = 100.0
-        
-        # Xây dựng Đồ thị góc rẽ (Turn Graph) ngay từ lúc khởi tạo
-        self._build_static_turn_graph()
-        self._draw_fixed_points()
 
-    def _build_static_turn_graph(self):
-        """Xây dựng Line Graph: Các nút là các cạnh có hướng (u, v)"""
-        self.static_turn_graph = nx.DiGraph()
+    def _build_simple_graph(self):
+        """Xây dựng Node Graph: Các nút là điểm, cạnh là khoảng cách vật lý"""
+        self.graph = nx.DiGraph() 
         
-        for v in self.connections:
-            for u in self.connections: # Giả định đồ thị có thể đi 2 chiều nếu bạn khai báo cả 2
-                if v in self.connections.get(u, []):
-                    # Đây là một cạnh có hướng (u -> v)
-                    edge_in = (u, v)
-                    
-                    # Tìm các cạnh tiếp theo (v -> w)
-                    for w in self.connections.get(v, []):
-                        if w == u: continue # Bỏ qua quay đầu tại chỗ 180 độ trên cùng 1 cạnh
-                        
-                        edge_out = (v, w)
-                        
-                        # Tính khoảng cách thực đoạn v -> w
-                        dist_v_w = np.linalg.norm(np.array(self.all_nodes[v]) - np.array(self.all_nodes[w]))
-                        
-                        # Tính Penalty góc rẽ tại v khi đi từ u -> v -> w
-                        v1 = np.array(self.all_nodes[v]) - np.array(self.all_nodes[u])
-                        v2 = np.array(self.all_nodes[w]) - np.array(self.all_nodes[v])
-                        penalty = self._calculate_penalty_from_vectors(v1, v2)
-                        
-                        # Thêm vào đồ thị rẽ: Trọng số = Quãng đường + Hình phạt quẹo
-                        self.static_turn_graph.add_edge(edge_in, edge_out, weight=dist_v_w + penalty)
+        for u in self.connections:
+            for v in self.connections.get(u, []):
+                # Tính khoảng cách Euclidean thực tế giữa node u và node v
+                dist = np.linalg.norm(np.array(self.all_nodes[u]) - np.array(self.all_nodes[v]))
+                # Trọng số duy nhất bây giờ chỉ là khoảng cách
+                self.graph.add_edge(u, v, weight=dist)
 
-    def _calculate_penalty_from_vectors(self, v1, v2):
-        """Tính penalty giữa 2 vector hướng"""
-        norm1 = np.linalg.norm(v1)
-        norm2 = np.linalg.norm(v2)
-        if norm1 < 1e-6 or norm2 < 1e-6: return 0
-        
-        dot = np.clip(np.dot(v1/norm1, v2/norm2), -1.0, 1.0)
-        angle_diff = math.acos(dot)
-        
-        if angle_diff > math.pi / 2 + 0.1: # Góc quẹo > 90 (Góc nội bộ nhọn)
-            return self.BASE_TURN_PENALTY * (angle_diff / math.pi) * self.SHARP_TURN_MULTIPLIER
-        return self.BASE_TURN_PENALTY * (angle_diff / math.pi)
+    def _get_candidates(self, point):
+        """Lấy 3 điểm (nodes) gần với vị trí hiện tại nhất"""
+        dist_to_point = lambda name: np.linalg.norm(np.array(point) - np.array(self.all_nodes[name]))
+        candidates = sorted(self.all_nodes.keys(), key=dist_to_point)
+        return candidates[:3] 
 
     def find_path(self, start_px, goal_name, ref_point=None):
-        if goal_name not in self.all_nodes: return None
+        if goal_name not in self.all_nodes: 
+            return None
 
         SNAP_THRESHOLD = 8.0
+        
         # 1. LOGIC SNAP
         closest_node = min(self.all_nodes.keys(), key=lambda n: np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[n])))
         min_dist = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[closest_node]))
         is_snapped = min_dist <= SNAP_THRESHOLD
 
-        # Tạo bản sao đồ thị rẽ để thêm các nút ảo START/END cho lượt này
-        G = self.static_turn_graph.copy()
-        start_node_virtual = "START_VIRTUAL"
-        end_node_virtual = "END_VIRTUAL"
+        # Tạo bản sao đồ thị để thêm node ảo nếu cần
+        G = self.graph.copy()
+        start_node = "START_VIRTUAL"
 
-        # 2. Vector hướng hiện tại
-        v_heading = None
-        if ref_point is not None:
-            v_heading = np.array(start_px) - np.array(ref_point)
-            if np.linalg.norm(v_heading) < 1.0: v_heading = None
-
-        # 3. Kết nối START_VIRTUAL vào các cạnh bắt đầu khả thi
-        start_points = [closest_node] if is_snapped else self._get_candidates(start_px)
-        for sp in start_points:
-            for nb in self.connections.get(sp, []):
-                # Nút trong turn_graph là (sp, nb)
-                target_edge_node = (sp, nb)
-                dist_robot_to_sp = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[sp]))
-                
-                # Penalty rẽ ngay từ hướng robot vào cạnh sp->nb
-                v_first_edge = np.array(self.all_nodes[nb]) - np.array(self.all_nodes[sp])
-                p_init = self._calculate_penalty_from_vectors(v_heading, v_first_edge) if v_heading is not None else 0
-                
-                # Trọng số cạnh ảo = đường đến điểm đầu + phạt rẽ + đường đoạn đầu sp-nb
-                # Lưu ý: Ta cộng luôn dist sp-nb vì nút tiếp theo trong DiGraph sẽ bắt đầu tính từ nb
-                dist_sp_nb = np.linalg.norm(np.array(self.all_nodes[sp]) - np.array(self.all_nodes[nb]))
-                G.add_edge(start_node_virtual, target_edge_node, weight=dist_robot_to_sp + p_init + dist_sp_nb)
-
-        # 4. Kết nối các cạnh dẫn tới ĐÍCH vào END_VIRTUAL
-        for u in self.all_nodes:
-            if goal_name in self.connections.get(u, []):
-                # Nếu có cạnh u -> goal_name, nối nó vào nút kết thúc ảo
-                G.add_edge((u, goal_name), end_node_virtual, weight=0)
-
-        # 5. Dijkstra trên Turn Graph
         if is_snapped:
             print(f"[STATUS] SNAPPED to Waypoint: '{closest_node}' (Dist: {min_dist:.2f}px)")
+            start_node = closest_node
         else:
             print(f"[STATUS] Vị trí tự do (Dist tới {closest_node}: {min_dist:.2f}px)")
-        
+            # Kết nối vị trí robot hiện tại (node ảo) với 3 điểm gần nhất trên đồ thị
+            candidates = self._get_candidates(start_px)
+            for cand in candidates:
+                dist_to_cand = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[cand]))
+                G.add_edge(start_node, cand, weight=dist_to_cand)
+
         print(f"Goal: {goal_name}")
 
         try:
-            # Kết quả là danh sách các CẠNH: [START, (u,v), (v,w), ..., END]
-            best_path_edges = nx.shortest_path(G, source=start_node_virtual, target=end_node_virtual, weight='weight')
+            # Dijkstra tìm đường ngắn nhất hoàn toàn dựa trên khoảng cách
+            path_node_names = nx.shortest_path(G, source=start_node, target=goal_name, weight='weight')
             
-            # Chuyển đổi list cạnh thành list tọa độ điểm
+            # Chuyển list tên node thành tọa độ (bao gồm cả điểm robot đang đứng thực tế ban đầu)
             path_coords = [start_px]
-            path_node_names = []
-            
-            for edge in best_path_edges:
-                if isinstance(edge, tuple): # Bỏ qua START_VIRTUAL và END_VIRTUAL
-                    u, v = edge
-                    if not path_node_names or path_node_names[-1] != u:
-                        path_node_names.append(u)
-                    if v not in path_node_names:
-                        path_node_names.append(v)
-
-            # Lấy tọa độ từ tên node
             for name in path_node_names:
+                if name == "START_VIRTUAL":
+                    continue # Bỏ qua tọa độ của node ảo vì đã lấy start_px
                 path_coords.append(self.all_nodes[name])
 
             self.draw_path(path_coords)
-            print(f"Route tối ưu: {' -> '.join(path_node_names)}")
+            
+            # Lọc bỏ tên START_VIRTUAL khi in log cho đẹp
+            printable_route = [n for n in path_node_names if n != "START_VIRTUAL"]
+            print(f"Route tối ưu: {' -> '.join(printable_route)}")
+            
             return path_coords
 
+        except nx.NetworkXNoPath:
+            print(f"Không có đường đi kết nối tới {goal_name}.")
+            path = [start_px, self.all_nodes[goal_name]]
+            self.draw_path(path)
+            return path
         except Exception as e:
-            print(f"Không tìm thấy đường đi mượt, đi thẳng. Lỗi: {e}")
+            print(f"Lỗi thuật toán: {e}")
             path = [start_px, self.all_nodes[goal_name]]
             self.draw_path(path)
             return path
 
-    # --- Các hàm hỗ trợ vẽ và marker giữ nguyên ---
     def _draw_fixed_points(self):
         for name, pos in self.waypoints.items():
             self._add_marker(pos[0], pos[1], name, QColor(0, 255, 0), 4)
@@ -204,11 +152,6 @@ class PathPlanner:
         text.setPos(x + 10, y - 12)
         text.setDefaultTextColor(Qt.GlobalColor.black) 
         text.setZValue(51) 
-
-    def _get_candidates(self, point):
-        dist_to_point = lambda name: np.linalg.norm(np.array(point) - np.array(self.all_nodes[name]))
-        candidates = sorted(self.all_nodes.keys(), key=dist_to_point)
-        return candidates[:3] 
 
     def draw_path(self, path):
         self.clear_path()
