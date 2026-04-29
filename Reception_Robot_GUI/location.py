@@ -28,10 +28,8 @@ class LocationTab(QWidget):
         super().__init__()
         self.ui = view
         
-        # Flag bảo vệ để không xung đột khi đang tính toán đường đi
         self._is_planning = False 
 
-        # Thay thế widget bằng graphics view
         layout = self.ui.parent().layout()
         self.ui.setParent(None)
         self.ui = MapGraphicsView()
@@ -40,7 +38,6 @@ class LocationTab(QWidget):
         self.map_scene = QGraphicsScene()
         self.ui.setScene(self.map_scene)
 
-        # Logger
         self.logger = PathLogger()
         self.logger.location_tab = self
 
@@ -48,17 +45,14 @@ class LocationTab(QWidget):
         self.trajectory_points = []
         self.trajectory_times = []
 
-        # Path planner
         self.planner = PathPlanner(self.map_scene)
         self.goals = self.planner.goals 
         
         home_coords = self.goals.get("Home", (121, 476))
         self.home_px, self.home_py = home_coords
 
-        # Load map (Thay đổi đường dẫn file nếu cần)
         self.load_map("Reception_Robot_GUI/resources/Map/B2_map.pgm")
         
-        # Khởi tạo vị trí ban đầu
         init_x = self.map_origin[0] + (self.home_px * self.map_resolution)
         init_y = self.map_origin[1] + (self.map_height - self.home_py) * self.map_resolution
 
@@ -71,13 +65,12 @@ class LocationTab(QWidget):
         
         self.last_planned_path = []
         
-        # Timer cập nhật GUI
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_robot_gui)
         self.update_timer.start(100)
 
     # ==========================================
-    #                  MAP & ROBOT
+    #             MAP & ROBOT
     # ==========================================
     def load_map(self, path: str):
         pixmap = QPixmap(path)
@@ -112,7 +105,6 @@ class LocationTab(QWidget):
         self.robot_icon_forward_offset_deg = 90.0
         self.map_scene.addItem(self.robot_item)
 
-        # Heading indicator (Mũi tên đỏ)
         self.heading_line = self.map_scene.addLine(0, 0, 0, 0, QPen(QColor(255, 0, 0), 3))
         self.heading_line.setZValue(110)
         self.heading_arrow = QGraphicsPolygonItem()
@@ -129,18 +121,16 @@ class LocationTab(QWidget):
         self.robot_pos = (px, py)
         self.robot_item.setPos(px - self.robot_w/2, py - self.robot_h/2)
 
-        # Logic hiển thị hướng: ưu tiên hướng di chuyển thực tế nếu có
         movement_heading = None
         if self._last_px_py is not None:
             dx, dy = px - self._last_px_py[0], py - self._last_px_py[1]
-            if math.hypot(dx, dy) > 0.8: # Chỉ tính hướng khi robot di chuyển rõ rệt
+            if math.hypot(dx, dy) > 0.8:
                 movement_heading = math.degrees(math.atan2(dy, dx))
 
         self._display_heading_deg = movement_heading if movement_heading is not None else self._theta_to_scene_deg(theta)
         self._update_heading_indicator(px, py, self._display_heading_deg)
         self.robot_item.setRotation(self._display_heading_deg + self.robot_icon_forward_offset_deg)
         
-        # Vẽ vết đường đi
         if len(self.trajectory_points) > 0:
             if math.dist((px, py), self.trajectory_points[-1]) > 2:
                 self.trajectory_points.append((px, py))
@@ -171,10 +161,9 @@ class LocationTab(QWidget):
         self.last_position = [x, y, theta]
 
     # ==========================================
-    #           PATH PLANNING & MQTT
+    #          PATH PLANNING & MQTT
     # ==========================================
     def plan_path(self, goal):
-        # Tránh xung đột nếu đang trong quá trình tính toán
         if self._is_planning:
             return
         self._is_planning = True
@@ -184,36 +173,85 @@ class LocationTab(QWidget):
             self.clear_trajectory()
             self.trajectory_points = [(self.robot_pos)]
 
-            # Tìm đường đi từ PathPlanner
+            # 1. Tìm đường đi
             self.planned_path = self.planner.find_path(self.robot_pos, goal, ref_point)
             self.planner.draw_path(self.planned_path)
             self.last_planned_path = self.planned_path
             
-            # Chuyển đổi sang tọa độ thực (m)
+            # 2. Chuyển đổi sang tọa độ mét
             self.plan_points = []
             for p_px, p_py in self.planned_path:
                 x = self.map_origin[0] + p_px * self.map_resolution
                 y = self.map_origin[1] + (self.map_height - p_py) * self.map_resolution
                 self.plan_points.append({"x": round(x, 3), "y": round(y, 3)})
 
-            # Kết hợp vị trí hiện tại và lọc điểm trùng
             curx, cury, _ = self.last_position
             current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
             self.full_plan_points = self._dedupe_waypoints([current_wp] + self.plan_points)
 
-            # Gửi MQTT và Log
+            # 3. TỰ ĐỘNG XOAY VỀ HƯỚNG ĐIỂM ĐẦU TIÊN
+            # Chúng ta sử dụng full_plan_points[1] vì [0] là vị trí hiện tại
+            if len(self.full_plan_points) > 1:
+                self._handle_auto_rotation(self.full_plan_points[1])
+
+            # 4. Gửi Waypoints qua MQTT
             self.logger.start_logging(self.full_plan_points)
             WaypointsPublisher().publish_waypoints(json.dumps(self.full_plan_points, indent=2))
 
         finally:
-            # Giải phóng khóa sau 500ms
             QTimer.singleShot(500, self._unlock_planning)
+
+    def _handle_auto_rotation(self, next_wp):
+        """Tính toán và gửi lệnh xoay robot về phía điểm kế tiếp"""
+        try:
+            # Tọa độ hiện tại (m) và hướng hiện tại (degree trên scene)
+            cur_x, cur_y, _ = self.last_position
+            current_heading_rad = math.radians(self._display_heading_deg)
+            
+            # Vector hướng hiện tại của robot (trên hệ tọa độ Scene)
+            dir_robot = np.array([math.cos(current_heading_rad), math.sin(current_heading_rad)])
+
+            # Tính toán vector mục tiêu (Target Vector)
+            # Lưu ý: Trong scene, trục Y hướng xuống, nên ta cần tính toán cẩn thận
+            target_px = (next_wp['x'] - self.map_origin[0]) / self.map_resolution
+            target_py = self.map_height - (next_wp['y'] - self.map_origin[1]) / self.map_resolution
+            
+            dx = target_px - self.robot_pos[0]
+            dy = target_py - self.robot_pos[1]
+            
+            dist = math.hypot(dx, dy)
+            if dist < 1.0: # Quá gần thì không cần xoay
+                return
+
+            dir_target = np.array([dx/dist, dy/dist])
+
+            # Tính góc lệch giữa 2 vector
+            dot = np.clip(np.dot(dir_robot, dir_target), -1.0, 1.0)
+            angle_diff_rad = math.acos(dot)
+            
+            # Xác định hướng xoay (Cross product)
+            cross = dir_robot[0] * dir_target[1] - dir_robot[1] * dir_target[0]
+            if cross < 0:
+                angle_diff_rad = -angle_diff_rad
+
+            # Tính góc đích tuyệt đối (Scene degree)
+            target_heading_deg = (self._display_heading_deg + math.degrees(angle_diff_rad)) % 360
+            
+            # Chuyển đổi về hệ góc robot (0-359, ngược chiều kim đồng hồ từ trục X)
+            # Công thức chuẩn hóa từ Scene Heading sang Robot Yaw
+            final_yaw = int((-target_heading_deg) % 360)
+            
+            # Publish lệnh xoay
+            WaypointsPublisher().publish_rotation(final_yaw)
+            print(f"[AutoRotate] Heading: {self._display_heading_deg:.1f}, Target: {final_yaw}")
+            
+        except Exception as e:
+            print(f"Error in auto rotation: {e}")
 
     def _unlock_planning(self):
         self._is_planning = False
 
     def _dedupe_waypoints(self, points):
-        """Loại bỏ các điểm tọa độ giống hệt nhau liên tiếp"""
         if not points: return []
         deduped = [points[0]]
         for i in range(1, len(points)):
