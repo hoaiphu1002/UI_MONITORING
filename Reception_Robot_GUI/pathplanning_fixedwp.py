@@ -2,14 +2,15 @@ import numpy as np
 import networkx as nx
 import json
 import math
-from datetime import datetime
 from PyQt6.QtGui import QPen, QColor, QBrush, QFont
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QGraphicsTextItem
 
 class PathPlanner:
     def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B2_config_wp.json"):
         self.scene = scene
         self.path_items = []
+        self._no_path_text_item = None
         
         # Load dữ liệu từ JSON
         with open(config_path, 'r', encoding='utf-8') as f:
@@ -34,7 +35,6 @@ class PathPlanner:
         self.scene.addLine(prev[0], prev[1], center[0], center[1], pen1)
         self.scene.addLine(center[0], center[1], next[0], next[1], pen2)
         
-        from PyQt6.QtWidgets import QGraphicsTextItem
         if hasattr(self, '_angle_text_item') and self._angle_text_item is not None:
             self.scene.removeItem(self._angle_text_item)
             
@@ -68,9 +68,7 @@ class PathPlanner:
         
         for u in self.connections:
             for v in self.connections.get(u, []):
-                # Tính khoảng cách Euclidean thực tế giữa node u và node v
                 dist = np.linalg.norm(np.array(self.all_nodes[u]) - np.array(self.all_nodes[v]))
-                # Trọng số duy nhất bây giờ chỉ là khoảng cách
                 self.graph.add_edge(u, v, weight=dist)
 
     def _get_candidates(self, point):
@@ -78,6 +76,15 @@ class PathPlanner:
         dist_to_point = lambda name: np.linalg.norm(np.array(point) - np.array(self.all_nodes[name]))
         candidates = sorted(self.all_nodes.keys(), key=dist_to_point)
         return candidates[:3] 
+
+    def _show_no_path_warning(self, pos):
+        """Hiển thị cảnh báo không tìm thấy đường đi trên GUI"""
+        self.clear_path()
+        self._no_path_text_item = QGraphicsTextItem("⚠️ NO PATH")
+        self._no_path_text_item.setDefaultTextColor(QColor(255, 0, 0))
+        self._no_path_text_item.setFont(QFont("Roboto", 12, QFont.Weight.Bold))
+        self._no_path_text_item.setPos(pos[0] + 10, pos[1] - 15)
+        self.scene.addItem(self._no_path_text_item)
 
     def find_path(self, start_px, goal_name, ref_point=None):
         if goal_name not in self.all_nodes: 
@@ -90,7 +97,6 @@ class PathPlanner:
         min_dist = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[closest_node]))
         is_snapped = min_dist <= SNAP_THRESHOLD
 
-        # Tạo bản sao đồ thị để thêm node ảo nếu cần
         G = self.graph.copy()
         start_node = "START_VIRTUAL"
 
@@ -99,7 +105,6 @@ class PathPlanner:
             start_node = closest_node
         else:
             print(f"[STATUS] Vị trí tự do (Dist tới {closest_node}: {min_dist:.2f}px)")
-            # Kết nối vị trí robot hiện tại (node ảo) với 3 điểm gần nhất trên đồ thị
             candidates = self._get_candidates(start_px)
             for cand in candidates:
                 dist_to_cand = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[cand]))
@@ -108,19 +113,22 @@ class PathPlanner:
         print(f"Goal: {goal_name}")
 
         try:
-            # Dijkstra tìm đường ngắn nhất hoàn toàn dựa trên khoảng cách
+            # Tìm đường ngắn nhất
             path_node_names = nx.shortest_path(G, source=start_node, target=goal_name, weight='weight')
             
-            # Chuyển list tên node thành tọa độ (bao gồm cả điểm robot đang đứng thực tế ban đầu)
+            # Nếu tìm được đường, xóa cảnh báo NO PATH cũ đi (nếu có)
+            if self._no_path_text_item:
+                try: self.scene.removeItem(self._no_path_text_item)
+                except: pass
+                self._no_path_text_item = None
+            
             path_coords = [start_px]
             for name in path_node_names:
                 if name == "START_VIRTUAL":
-                    continue # Bỏ qua tọa độ của node ảo vì đã lấy start_px
+                    continue
                 path_coords.append(self.all_nodes[name])
 
             self.draw_path(path_coords)
-            
-            # Lọc bỏ tên START_VIRTUAL khi in log cho đẹp
             printable_route = [n for n in path_node_names if n != "START_VIRTUAL"]
             print(f"Route tối ưu: {' -> '.join(printable_route)}")
             
@@ -128,14 +136,12 @@ class PathPlanner:
 
         except nx.NetworkXNoPath:
             print(f"Không có đường đi kết nối tới {goal_name}.")
-            path = [start_px, self.all_nodes[goal_name]]
-            self.draw_path(path)
-            return path
+            self._show_no_path_warning(start_px)
+            return None
         except Exception as e:
             print(f"Lỗi thuật toán: {e}")
-            path = [start_px, self.all_nodes[goal_name]]
-            self.draw_path(path)
-            return path
+            self._show_no_path_warning(start_px)
+            return None
 
     def _draw_fixed_points(self):
         for name, pos in self.waypoints.items():
@@ -166,3 +172,8 @@ class PathPlanner:
             try: self.scene.removeItem(item)
             except: pass
         self.path_items.clear()
+        
+        if hasattr(self, '_no_path_text_item') and self._no_path_text_item is not None:
+            try: self.scene.removeItem(self._no_path_text_item)
+            except: pass
+            self._no_path_text_item = None
