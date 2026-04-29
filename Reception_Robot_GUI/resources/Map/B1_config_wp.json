@@ -32,9 +32,9 @@
     "wp13": ["wp9", "wp5", "Water intake"],
     
     "Restroom": ["wp2", "wp3"],
-    "Water intake": ["wp13", "Chemistry hall"],
+    "Water intake": [ "wp13","Chemistry hall"],
     "Home": ["wp12"],
-    "Chemistry hall": ["wp5", "wp9", "wp12", "wp13", "Water intake"],
+    "Chemistry hall": ["wp5", "wp12", "Water intake"],
     "Robotics lab": ["wp11"],
     "Stairs": ["wp1", "wp2"],
     "Electrical lab": ["wp1"]

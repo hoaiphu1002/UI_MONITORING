@@ -24,6 +24,25 @@ class MapGraphicsView(QGraphicsView):
             self.scale(1 / self.zoom_factor, 1 / self.zoom_factor)
 
 class LocationTab(QWidget):
+    def _compute_signed_turn_deg(self, heading_vec, target_vec):
+        """Trả về góc quay signed từ heading -> target trong khoảng [-180, 180]."""
+        h_norm = np.linalg.norm(heading_vec)
+        t_norm = np.linalg.norm(target_vec)
+        if h_norm < 1e-8 or t_norm < 1e-8:
+            return 0.0
+
+        h = heading_vec / h_norm
+        t = target_vec / t_norm
+        dot = float(np.clip(np.dot(h, t), -1.0, 1.0))
+        cross_z = float(h[0] * t[1] - h[1] * t[0])
+        return float(np.degrees(np.arctan2(cross_z, dot)))
+
+    def _get_real_heading_world_rad(self):
+        theta = float(self.last_position[2])
+        if abs(theta) <= (2 * math.pi + 0.1):
+            return theta
+        return math.radians(theta)
+
     def publish_waypoint_rotation(self, goal_name):
         """Tính và gửi góc xoay về hướng waypoint tiếp theo (2 lần, 0ms và 5000ms)"""
         try:
@@ -37,22 +56,10 @@ class LocationTab(QWidget):
                         current_pos = np.array(self.goals[goal_name], dtype=float)
                         next_pos = np.array(self.goals[next_goal], dtype=float)
                         vec_next = next_pos - current_pos
-                        vec_next_norm = vec_next / (np.linalg.norm(vec_next) + 1e-8)
-                        heading_deg = getattr(self, '_display_heading_deg', None)
-                        if heading_deg is None:
-                            theta_now = float(self.last_position[2])
-                            heading_deg = float(self._theta_to_scene_deg(theta_now))
-                        heading_rad = np.deg2rad(float(heading_deg))
+                        heading_rad = self._get_real_heading_world_rad()
                         heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
-                        dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
-                        angle = np.arccos(dot) * 180.0 / np.pi
-                        cross = np.cross(heading_vec, vec_next_norm)
-                        sign = np.sign(cross)
-                        signed_angle = angle * sign
-                        if signed_angle < 0:
-                            angle_to_publish = int(360-abs(signed_angle))
-                        else:
-                            angle_to_publish = int(signed_angle)
+                        signed_angle = self._compute_signed_turn_deg(heading_vec, vec_next)
+                        angle_to_publish = int(round((signed_angle + 360.0) % 360.0))
                         from MQTT.publisher_angle import AnglePublisher
                         from MQTT.mqtt_publisher_config import get_topic
                         def _publish_xoay_angle():
@@ -64,7 +71,8 @@ class LocationTab(QWidget):
                             pub.publish_angle(angle_to_publish)
                         QTimer.singleShot(0, _publish_xoay_angle)
                         QTimer.singleShot(5000, _publish_xoay_angle)
-                        print(f"[WAYPOINT] Publish xoay: {angle_to_publish}° (0-359, luôn quay phải) để hướng về waypoint {next_goal} (2 lần)")
+                        QTimer.singleShot(8000, _publish_xoay_angle)
+                        print(f"[WAYPOINT] Publish xoay: {angle_to_publish}° (0-359) để hướng về waypoint {next_goal} (2 lần)")
         except Exception as e:
             print(f"[WAYPOINT] Angle to waypoint failed: {e}")
 
@@ -75,12 +83,7 @@ class LocationTab(QWidget):
                 home_pt = np.array(planner.all_nodes['Home'], dtype=float)
                 wp14_pt = np.array(planner.waypoints['wp14'], dtype=float)
 
-                heading_deg = getattr(self, '_display_heading_deg', None)
-                if heading_deg is None:
-                    theta_now = float(self.last_position[2])
-                    heading_deg = float(self._theta_to_scene_deg(theta_now))
-
-                heading_rad = np.deg2rad(float(heading_deg))
+                heading_rad = self._get_real_heading_world_rad()
                 heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
                 prev_pt = home_pt - heading_vec * 80.0
 
@@ -205,19 +208,17 @@ class LocationTab(QWidget):
         self.robot_pos = (px, py)
         self.robot_item.setPos(px - self.robot_w/2, py - self.robot_h/2)
 
-        movement_heading = None
-        if self._last_px_py is not None:
-            dx, dy = px - self._last_px_py[0], py - self._last_px_py[1]
-            if math.hypot(dx, dy) > 0.8:
-                movement_heading = math.degrees(math.atan2(dy, dx))
-
-        self._display_heading_deg = movement_heading if movement_heading is not None else self._theta_to_scene_deg(theta)
+        # Luôn dùng theta thực tế từ pose để hiển thị và tính toán hướng xoay.
+        self._display_heading_deg = self._theta_to_scene_deg(theta)
         self._update_heading_indicator(px, py, self._display_heading_deg)
         self.robot_item.setRotation(self._display_heading_deg + self.robot_icon_forward_offset_deg)
         self._last_px_py = (px, py)
 
     def set_location(self, x, y, theta):
         self.last_position = [x, y, theta]
+
+    def _get_real_heading_scene_deg(self):
+        return float(self._theta_to_scene_deg(float(self.last_position[2])))
 
     def _theta_to_scene_deg(self, theta):
         if abs(theta) <= (2 * math.pi + 0.1):
@@ -295,17 +296,10 @@ class LocationTab(QWidget):
         try:
             wp_next = self.full_plan_points[1]
             vec_next = np.array([wp_next['x'] - curx, wp_next['y'] - cury], dtype=float)
-            norm = np.linalg.norm(vec_next) + 1e-8
-            vec_next_norm = vec_next / norm
-
-            heading_deg = getattr(self, '_display_heading_deg', 0.0)
-            heading_rad = np.deg2rad(float(heading_deg))
+            heading_rad = self._get_real_heading_world_rad()
             heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
-
-            dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
-            angle = np.arccos(dot) * 180.0 / np.pi
-            sign = np.sign(np.cross(heading_vec, vec_next_norm))
-            angle_to_publish = int((angle * sign + 360.0) % 360.0)
+            signed_angle = self._compute_signed_turn_deg(heading_vec, vec_next)
+            angle_to_publish = int(round((signed_angle + 360.0) % 360.0))
 
             from MQTT.publisher_angle import AnglePublisher
             from MQTT.mqtt_publisher_config import get_topic
