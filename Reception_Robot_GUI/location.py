@@ -23,10 +23,6 @@ class MapGraphicsView(QGraphicsView):
             self.scale(1 / self.zoom_factor, 1 / self.zoom_factor)
 
 class LocationTab(QWidget):
-    def _theta_to_scene_deg(self, theta_rad):
-        """Chuyển đổi góc radian sang độ cho scene (chuẩn hóa về [0, 360))"""
-        deg = np.degrees(theta_rad)
-        return deg % 360
     def __init__(self, view):
         super().__init__()
         self.ui = view
@@ -47,8 +43,12 @@ class LocationTab(QWidget):
         # Khởi tạo trajectory với điểm Home là điểm đầu tiên
         self.trajectory_items = []
 
+        where = "B1"
+        wp_path = f"Reception_Robot_GUI/resources/Map/{where}_config_wp.json"
+        map_path = f"Reception_Robot_GUI/resources/Map/{where}_map.pgm"
+
         # Path planner
-        self.planner = PathPlanner(self.map_scene)
+        self.planner = PathPlanner(self.map_scene, config_path=wp_path)
         # self.planner.set_locations(self.goals)
 
         # Lấy danh sách goals trực tiếp từ planner
@@ -59,7 +59,7 @@ class LocationTab(QWidget):
         self.home_px, self.home_py = home_coords
 
         # Load map và các thiết lập khác
-        self.load_map("Reception_Robot_GUI/resources/Map/B2_map.pgm")
+        self.load_map(map_path)
         
         # Khởi tạo robot tại vị trí Home
         init_x = self.map_origin[0] + (self.home_px * self.map_resolution)
@@ -70,6 +70,12 @@ class LocationTab(QWidget):
         self.create_robot()
         self.create_heading_indicator()  # Thêm mũi tên hướng
         self.update_robot_gui()
+    
+    def _theta_to_scene_deg(self, theta_rad):
+        """Chuyển đổi góc radian sang độ cho scene (chuẩn hóa về [0, 360))"""
+        deg = np.degrees(theta_rad)
+        return deg % 360
+    
     def create_heading_indicator(self):
         # Tạo heading indicator (mũi tên hướng)
         self.heading_pen = QPen(QColor(255, 0, 0), 3)

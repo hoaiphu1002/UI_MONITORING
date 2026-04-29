@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QGraphicsTextItem
 
 class PathPlanner:
-    def __init__(self, scene, config_path="Reception_Robot_GUI/resources/Map/B2_config_wp.json"):
+    def __init__(self, scene, config_path):
         self.scene = scene
         self.path_items = []
         self._no_path_text_item = None
