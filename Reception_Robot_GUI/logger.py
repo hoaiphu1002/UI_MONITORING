@@ -1,4 +1,5 @@
 import csv
+import os
 import numpy as np
 from datetime import datetime
 import time
@@ -13,12 +14,13 @@ class PathLogger(QObject):
     """
     cte_signal = pyqtSignal(float)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, log_dir=None):
         super().__init__(parent)
         self.location_tab = None
         self.log_data = []
         self.current_segment_idx = 0
         self.threshold_to_next = 0.3
+        self.log_dir = log_dir
         self.last_log_time = 0
         self.logging_active = False
 
@@ -106,8 +108,8 @@ class PathLogger(QObject):
             print("No planned path")
             return
 
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        full_path = f"log_path/path_comparison_{timestamp_str}.csv"
+        timestamp_str = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+        full_path = os.path.join(self.log_dir, f"{timestamp_str}.csv")
 
         errors = [row[5] for row in self.log_data]
 
@@ -209,8 +211,8 @@ def salvage_log_data(input_csv, output_csv, path_json):
     print(f"[SUCCESS] File saved: {output_csv}")
     print(summary)
 
-if __name__ == "__main__":
-    input_file = "log_path/path_comparison_B2_14_4.csv"        
-    output_file = "log_path/path_comparison_B2_14_4_fixed.csv" 
-    path_file = "log_path/waypoints.json"
-    salvage_log_data(input_file, output_file, path_file)
+# if __name__ == "__main__":
+#     input_file = "log_path/path_comparison_B2_14_4.csv"        
+#     output_file = "log_path/path_comparison_B2_14_4_fixed.csv" 
+#     path_file = "log_path/waypoints.json"
+#     salvage_log_data(input_file, output_file, path_file)

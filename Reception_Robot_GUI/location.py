@@ -36,16 +36,14 @@ class LocationTab(QWidget):
         self.map_scene = QGraphicsScene()
         self.ui.setScene(self.map_scene)
 
-        # Logger
-        self.logger = PathLogger()
-        self.logger.location_tab = self
-
-        # Khởi tạo trajectory với điểm Home là điểm đầu tiên
-        self.trajectory_items = []
-
         where = "B1"
+        log_dir = f"Reception_Robot_GUI/log_path/{where}/"
         wp_path = f"Reception_Robot_GUI/resources/Map/{where}_config_wp.json"
         map_path = f"Reception_Robot_GUI/resources/Map/{where}_map.pgm"
+        
+        # Logger
+        self.logger = PathLogger(log_dir=log_dir)
+        self.logger.location_tab = self
 
         # Path planner
         self.planner = PathPlanner(self.map_scene, config_path=wp_path)
@@ -64,6 +62,9 @@ class LocationTab(QWidget):
         # Khởi tạo robot tại vị trí Home
         init_x = self.map_origin[0] + (self.home_px * self.map_resolution)
         init_y = self.map_origin[1] + (self.map_height - self.home_py) * self.map_resolution
+        
+        # Khởi tạo trajectory với điểm Home là điểm đầu tiên
+        self.trajectory_items = []
 
         self.last_position = [init_x, init_y, 0.0]
         self.initial_heading_deg = 0.0  # Mốc góc ban đầu (0 độ)
