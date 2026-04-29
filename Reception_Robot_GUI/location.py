@@ -24,11 +24,102 @@ class MapGraphicsView(QGraphicsView):
             self.scale(1 / self.zoom_factor, 1 / self.zoom_factor)
 
 class LocationTab(QWidget):
+    def publish_waypoint_rotation(self, goal_name):
+        """Tính và gửi góc xoay về hướng waypoint tiếp theo (2 lần, 0ms và 5000ms)"""
+        try:
+            planner = self.planner
+            goal_names = list(self.goals.keys())
+            if goal_name in goal_names:
+                idx = goal_names.index(goal_name)
+                if idx + 1 < len(goal_names):
+                    next_goal = goal_names[idx + 1]
+                    if next_goal != "Home":
+                        current_pos = np.array(self.goals[goal_name], dtype=float)
+                        next_pos = np.array(self.goals[next_goal], dtype=float)
+                        vec_next = next_pos - current_pos
+                        vec_next_norm = vec_next / (np.linalg.norm(vec_next) + 1e-8)
+                        heading_deg = getattr(self, '_display_heading_deg', None)
+                        if heading_deg is None:
+                            theta_now = float(self.last_position[2])
+                            heading_deg = float(self._theta_to_scene_deg(theta_now))
+                        heading_rad = np.deg2rad(float(heading_deg))
+                        heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+                        dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
+                        angle = np.arccos(dot) * 180.0 / np.pi
+                        cross = np.cross(heading_vec, vec_next_norm)
+                        sign = np.sign(cross)
+                        signed_angle = angle * sign
+                        if signed_angle < 0:
+                            angle_to_publish = int(360-abs(signed_angle))
+                        else:
+                            angle_to_publish = int(signed_angle)
+                        from MQTT.publisher_angle import AnglePublisher
+                        from MQTT.mqtt_publisher_config import get_topic
+                        def _publish_xoay_angle():
+                            pub = AnglePublisher()
+                            try:
+                                pub.topic = get_topic("xoay")
+                            except Exception:
+                                pass
+                            pub.publish_angle(angle_to_publish)
+                        QTimer.singleShot(0, _publish_xoay_angle)
+                        QTimer.singleShot(5000, _publish_xoay_angle)
+                        print(f"[WAYPOINT] Publish xoay: {angle_to_publish}° (0-359, luôn quay phải) để hướng về waypoint {next_goal} (2 lần)")
+        except Exception as e:
+            print(f"[WAYPOINT] Angle to waypoint failed: {e}")
+
+    def publish_home_rotation(self):
+        try:
+            planner = self.planner
+            if 'wp14' in planner.waypoints and 'Home' in planner.all_nodes:
+                home_pt = np.array(planner.all_nodes['Home'], dtype=float)
+                wp14_pt = np.array(planner.waypoints['wp14'], dtype=float)
+
+                heading_deg = getattr(self, '_display_heading_deg', None)
+                if heading_deg is None:
+                    theta_now = float(self.last_position[2])
+                    heading_deg = float(self._theta_to_scene_deg(theta_now))
+
+                heading_rad = np.deg2rad(float(heading_deg))
+                heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+                prev_pt = home_pt - heading_vec * 80.0
+
+                angle_deg, sign, dot = planner._compute_angle_between(prev_pt, home_pt, wp14_pt)
+                planner.last_deviation_angle = angle_deg
+                planner.last_deviation_sign = sign
+                planner.last_deviation_signed_angle = sign * angle_deg
+                planner.last_deviation_angle_360 = (planner.last_deviation_signed_angle + 360.0) % 360.0
+                planner.last_deviation_dot = dot
+                planner._draw_angle_visual(prev_pt, home_pt, wp14_pt, angle_deg, sign)
+
+                normalized_angle = int(planner.last_deviation_angle_360)
+                from MQTT.publisher_angle import AnglePublisher
+                from MQTT.mqtt_publisher_config import get_topic
+                def _publish_xoay_angle():
+                    pub = AnglePublisher()
+                    try:
+                        pub.topic = get_topic("xoay")
+                    except Exception:
+                        pass
+                    pub.publish_angle(normalized_angle)
+                QTimer.singleShot(0, _publish_xoay_angle)
+                QTimer.singleShot(5000, _publish_xoay_angle)
+                print(
+                    f"[ARRIVAL] Heading deviation at Home: "
+                    f"signed={planner.last_deviation_signed_angle:.1f}°, "
+                    f"angle_360={planner.last_deviation_angle_360:.1f}°, "
+                    f"publish_times=2, interval_ms=5000, value={normalized_angle}"
+                )
+        except Exception as e:
+            print(f"[MQTT ANGLE] Compute/publish on arrival failed: {e}")
     def __init__(self, view):
         super().__init__()
         self.ui = view
+        
+        # Biến trạng thái để tránh tính toán trùng lặp trong thời gian ngắn
+        self._is_planning = False 
 
-        # Thay thế widget bằng graphics view
+        # Giữ nguyên phần khởi tạo giao diện của bạn
         layout = self.ui.parent().layout()
         self.ui.setParent(None)
         self.ui = MapGraphicsView()
@@ -37,28 +128,18 @@ class LocationTab(QWidget):
         self.map_scene = QGraphicsScene()
         self.ui.setScene(self.map_scene)
 
-        # Logger
         self.logger = PathLogger()
         self.logger.location_tab = self
-
-        # Khởi tạo trajectory với điểm Home là điểm đầu tiên
         self.trajectory_items = []
 
-        # Path planner
         self.planner = PathPlanner(self.map_scene)
-        # self.planner.set_locations(self.goals)
-
-        # Lấy danh sách goals trực tiếp từ planner
         self.goals = self.planner.goals 
         
-        # Home cũng lấy từ dữ liệu tập trung
         home_coords = self.goals.get("Home", (825, 394))
         self.home_px, self.home_py = home_coords
 
-        # Load map và các thiết lập khác
         self.load_map("Reception_Robot_GUI/resources/Map/new_map2.pgm")
         
-        # Khởi tạo robot tại vị trí Home
         init_x = self.map_origin[0] + (self.home_px * self.map_resolution)
         init_y = self.map_origin[1] + (self.map_height - self.home_py) * self.map_resolution
 
@@ -68,14 +149,10 @@ class LocationTab(QWidget):
 
         self.last_planned_path = []
         
-        # Timer cập nhật vị trí từ MQTT (nếu có)
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_robot_gui)
         self.update_timer.start(100)
 
-    # ==========================================
-    #                  MAP
-    # ==========================================
     def load_map(self, path: str):
         pixmap = QPixmap(path)
         if pixmap.isNull():
@@ -89,7 +166,6 @@ class LocationTab(QWidget):
         self.map_width = pixmap.width()
         self.map_height = pixmap.height()
 
-        # Đọc file YAML đi kèm để lấy thông số tọa độ thực
         yaml_path = path.replace(".pgm", ".yaml")
         try:
             with open(yaml_path, 'r') as file:
@@ -97,89 +173,53 @@ class LocationTab(QWidget):
                 self.map_resolution = map_config['resolution']
                 self.map_origin = (map_config['origin'][0], map_config['origin'][1])
         except Exception as e:
-            # Giá trị dự phòng nếu không đọc được file
             self.map_resolution = 0.05
             self.map_origin = (-1.545, -12.181) 
-            print(f"Error reading YAML, using defaults: {e}")
+            print(f"Error reading YAML: {e}")
 
-    # ==========================================
-    #               ROBOT GRAPHICS
-    # ==========================================
     def create_robot(self):
         pixmap = QPixmap("Reception_Robot_GUI/resources/Icons/robot.png")
-        pixmap = pixmap.scaled(30, 30, 
-                             Qt.AspectRatioMode.KeepAspectRatio,
-                             Qt.TransformationMode.SmoothTransformation)
-
+        pixmap = pixmap.scaled(30, 30, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         self.robot_item = QGraphicsPixmapItem(pixmap)
         self.robot_item.setZValue(100)
-        self.robot_w = pixmap.width()
-        self.robot_h = pixmap.height()
+        self.robot_w, self.robot_h = pixmap.width(), pixmap.height()
         self.robot_item.setTransformOriginPoint(self.robot_w / 2, self.robot_h / 2)
-        # Adjust if robot icon's forward direction in image is not along +X axis.
         self.robot_icon_forward_offset_deg = 90.0
         self.map_scene.addItem(self.robot_item)
 
-        # Direction indicator so operator can see heading while moving.
-        self.heading_pen = QPen(QColor(255, 80, 0), 3)
-        self.heading_arrow_brush = QBrush(QColor(255, 80, 0))
-        self.heading_line = self.map_scene.addLine(0, 0, 0, 0, self.heading_pen)
+        self.heading_line = self.map_scene.addLine(0, 0, 0, 0, QPen(QColor(255, 80, 0), 3))
         self.heading_line.setZValue(110)
         self.heading_arrow = QGraphicsPolygonItem()
-        self.heading_arrow.setBrush(self.heading_arrow_brush)
+        self.heading_arrow.setBrush(QBrush(QColor(255, 80, 0)))
         self.heading_arrow.setPen(QPen(Qt.GlobalColor.transparent, 0))
         self.heading_arrow.setZValue(111)
         self.map_scene.addItem(self.heading_arrow)
-
         self._last_px_py = None
         self._display_heading_deg = 0.0
 
-    # ==========================================
-    #          ROBOT REAL POSITION UPDATE
-    # ==========================================
     def update_robot_gui(self):
         x, y, theta = self.last_position
-
-        # Chuyển đổi từ Mét → Pixel để vẽ lên màn hình
         px = (x - self.map_origin[0]) / self.map_resolution
         py = self.map_height - (y - self.map_origin[1]) / self.map_resolution
 
         self.robot_pos = (px, py)
         self.robot_item.setPos(px - self.robot_w/2, py - self.robot_h/2)
 
-        # Prefer movement-based heading; fallback to incoming theta when standing still.
         movement_heading = None
         if self._last_px_py is not None:
-            dx = px - self._last_px_py[0]
-            dy = py - self._last_px_py[1]
+            dx, dy = px - self._last_px_py[0], py - self._last_px_py[1]
             if math.hypot(dx, dy) > 0.8:
                 movement_heading = math.degrees(math.atan2(dy, dx))
 
-        if movement_heading is not None:
-            self._display_heading_deg = movement_heading
-        else:
-            self._display_heading_deg = self._theta_to_scene_deg(theta)
-
+        self._display_heading_deg = movement_heading if movement_heading is not None else self._theta_to_scene_deg(theta)
         self._update_heading_indicator(px, py, self._display_heading_deg)
         self.robot_item.setRotation(self._display_heading_deg + self.robot_icon_forward_offset_deg)
         self._last_px_py = (px, py)
 
-        # Lưu vết đường đi (Trajectory)
-        if hasattr(self, 'trajectory_points') and len(self.trajectory_points) > 0:
-            current_point = (px, py)
-            last_point = self.trajectory_points[-1]
-
-            if np.linalg.norm(np.array(current_point) - np.array(last_point)) > 2:
-                self.trajectory_points.append(current_point)
-                self.trajectory_times.append(datetime.now())
-                self.update_trajectory()
-
     def set_location(self, x, y, theta):
-        """Hàm này nhận dữ liệu x, y, theta từ MQTT Manager"""
         self.last_position = [x, y, theta]
 
     def _theta_to_scene_deg(self, theta):
-        # MQTT theta can be rad or deg depending on publisher; support both.
         if abs(theta) <= (2 * math.pi + 0.1):
             theta_deg = math.degrees(theta)
         else:
@@ -188,137 +228,116 @@ class LocationTab(QWidget):
 
     def _update_heading_indicator(self, cx, cy, heading_deg):
         line_len = max(self.robot_w, self.robot_h) * 0.9
-        arrow_len = 10.0
-        arrow_half_width = 5.0
         rad = math.radians(heading_deg)
-
         tip_x = cx + line_len * math.cos(rad)
         tip_y = cy + line_len * math.sin(rad)
         self.heading_line.setLine(cx, cy, tip_x, tip_y)
-
-        base_x = tip_x - arrow_len * math.cos(rad)
-        base_y = tip_y - arrow_len * math.sin(rad)
+        
+        arrow_len, arrow_half_width = 10.0, 5.0
+        base_x, base_y = tip_x - arrow_len * math.cos(rad), tip_y - arrow_len * math.sin(rad)
         left_x = base_x + arrow_half_width * math.cos(rad + math.pi / 2.0)
         left_y = base_y + arrow_half_width * math.sin(rad + math.pi / 2.0)
         right_x = base_x + arrow_half_width * math.cos(rad - math.pi / 2.0)
         right_y = base_y + arrow_half_width * math.sin(rad - math.pi / 2.0)
+        self.heading_arrow.setPolygon(QPolygonF([QPointF(tip_x, tip_y), QPointF(left_x, left_y), QPointF(right_x, right_y)]))
 
-        arrow_poly = QPolygonF([
-            QPointF(tip_x, tip_y),
-            QPointF(left_x, left_y),
-            QPointF(right_x, right_y)
-        ])
-        self.heading_arrow.setPolygon(arrow_poly)
+    def plan_path(self, goal):
+        # KHÓA LOGIC: Nếu đang tính toán thì thoát ra để tránh chạy 2 lần
+        if self._is_planning:
+            return
+        self._is_planning = True
 
-    # ... (Các hàm clear_trajectory, update_trajectory, plan_path giữ nguyên như cũ)
+        try:
+            ref_point = self.last_planned_path[-2] if len(self.last_planned_path) >= 2 else None
+            self.clear_trajectory()
+            self.trajectory_points = []
+            self.trajectory_times = []
+
+            px, py = self.robot_pos
+            self.trajectory_points.append((px, py))
+            self.trajectory_times.append(datetime.now())
+
+            # Thực hiện tính toán đường đi
+            self.planned_path = self.planner.find_path(self.robot_pos, goal, ref_point)
+            print(f"[DEBUG] planned_path (pixel): {self.planned_path}")
+            self.planner.draw_path(self.planned_path)
+            self.last_planned_path = self.planned_path
+            
+            # Chuyển đổi sang mét
+            self.plan_points = []
+            for p_px, p_py in self.planned_path:
+                x = self.map_origin[0] + p_px * self.map_resolution
+                y = self.map_origin[1] + (self.map_height - p_py) * self.map_resolution
+                self.plan_points.append({"x": round(x, 3), "y": round(y, 3)})
+
+            curx, cury, _ = self.last_position
+            current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
+            self.full_plan_points = self._dedupe_consecutive_waypoints([current_wp] + self.plan_points)
+            print(f"[DEBUG] full_plan_points (m): {self.full_plan_points}")
+
+            # Gửi dữ liệu MQTT
+            self.logger.start_logging(self.full_plan_points)
+            WaypointsPublisher().publish_waypoints(json.dumps(self.full_plan_points, indent=2))
+
+            # Logic xoay tự động (Giữ nguyên)
+            if len(self.full_plan_points) >= 2:
+                self._handle_auto_rotation(curx, cury)
+
+        finally:
+            # Mở khóa sau khi hoàn tất (hoặc sau khi lỗi)
+            # Dùng QTimer để reset khóa sau 500ms, đảm bảo các signal trùng lặp bị bỏ qua hoàn toàn
+            QTimer.singleShot(500, self._reset_planning_lock)
+
+    def _reset_planning_lock(self):
+        self._is_planning = False
+
+    def _handle_auto_rotation(self, curx, cury):
+        try:
+            wp_next = self.full_plan_points[1]
+            vec_next = np.array([wp_next['x'] - curx, wp_next['y'] - cury], dtype=float)
+            norm = np.linalg.norm(vec_next) + 1e-8
+            vec_next_norm = vec_next / norm
+
+            heading_deg = getattr(self, '_display_heading_deg', 0.0)
+            heading_rad = np.deg2rad(float(heading_deg))
+            heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
+
+            dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
+            angle = np.arccos(dot) * 180.0 / np.pi
+            sign = np.sign(np.cross(heading_vec, vec_next_norm))
+            angle_to_publish = int((angle * sign + 360.0) % 360.0)
+
+            from MQTT.publisher_angle import AnglePublisher
+            from MQTT.mqtt_publisher_config import get_topic
+            pub = AnglePublisher()
+            try: pub.topic = get_topic("xoay")
+            except: pass
+            pub.publish_angle(angle_to_publish)
+            print(f"[AUTO_XOAY] Publish xoay: {angle_to_publish}°")
+        except Exception as e:
+            print(f"Auto rotation error: {e}")
+
+    def _dedupe_consecutive_waypoints(self, points):
+        deduped = []
+        last_p = None
+        for p in points:
+            curr = (p["x"], p["y"])
+            if curr != last_p:
+                deduped.append(p)
+                last_p = curr
+        return deduped
+
     def clear_trajectory(self):
-        for item in self.trajectory_items:
-            self.map_scene.removeItem(item)
+        for item in self.trajectory_items: self.map_scene.removeItem(item)
         self.trajectory_items.clear()
 
     def update_trajectory(self):
         if len(self.trajectory_points) < 2: return
-        for item in self.trajectory_items:
-            self.map_scene.removeItem(item)
-        self.trajectory_items.clear()
+        self.clear_trajectory()
         pen = QPen(QColor(180, 0, 0), 3)
         for i in range(len(self.trajectory_points) - 1):
-            x1, y1 = self.trajectory_points[i]
-            x2, y2 = self.trajectory_points[i + 1]
-            line = self.map_scene.addLine(x1, y1, x2, y2, pen)
-            self.trajectory_items.append(line)
+            p1, p2 = self.trajectory_points[i], self.trajectory_points[i+1]
+            self.trajectory_items.append(self.map_scene.addLine(p1[0], p1[1], p2[0], p2[1], pen))
 
     def get_goal_names(self):
         return list(self.goals.keys())
-
-    def plan_path(self, goal):
-        ref_point = None
-        if len(self.last_planned_path) >= 2:
-            # Điểm áp chót của lần chạy trước chính là "hướng đi tới" của robot
-            ref_point = self.last_planned_path[-2]
-            
-        self.clear_trajectory()
-        self.trajectory_points = []
-        self.trajectory_times = []
-
-        px, py = self.robot_pos
-        self.trajectory_points.append((px, py))
-        self.trajectory_times.append(datetime.now())
-
-        self.planned_path = self.planner.find_path(self.robot_pos, goal, ref_point)
-        print(f"[DEBUG] planned_path (pixel): {self.planned_path}")
-        self.planner.draw_path(self.planned_path)
-        self.last_planned_path = self.planned_path
-        self.plan_points = []
-
-        for px, py in self.planned_path:
-            x = self.map_origin[0] + px * self.map_resolution
-            y = self.map_origin[1] + (self.map_height - py) * self.map_resolution
-            self.plan_points.append({"x": round(x, 3), "y": round(y, 3)})
-
-        curx, cury, _ = self.last_position
-        current_wp = {"x": round(curx, 3), "y": round(cury, 3)}
-        self.full_plan_points = self._dedupe_consecutive_waypoints([current_wp] + self.plan_points)
-        print(f"[DEBUG] full_plan_points (m): {self.full_plan_points}")
-
-        self.logger.start_logging(self.full_plan_points)
-
-        waypoints_json = json.dumps(self.full_plan_points, indent=2)
-        publisher = WaypointsPublisher()
-        publisher.publish_waypoints(waypoints_json)
-
-        # --- TÍNH GÓC XOAY NGAY SAU KHI LẬP ROUTE MỚI ---
-        try:
-            if len(self.full_plan_points) >= 2:
-                curx, cury, _ = self.last_position
-                wp_next = self.full_plan_points[1]
-                vec_next = np.array([wp_next['x'] - curx, wp_next['y'] - cury], dtype=float)
-                norm = np.linalg.norm(vec_next) + 1e-8
-                vec_next_norm = vec_next / norm
-
-                # Hướng hiện tại của robot
-                heading_deg = getattr(self, '_display_heading_deg', None)
-                if heading_deg is None:
-                    theta_now = float(self.last_position[2])
-                    heading_deg = float(self._theta_to_scene_deg(theta_now))
-                heading_rad = np.deg2rad(float(heading_deg))
-                heading_vec = np.array([np.cos(heading_rad), np.sin(heading_rad)], dtype=float)
-
-                # Tính góc giữa hướng robot và hướng waypoint tiếp theo
-                dot = np.clip(np.dot(heading_vec, vec_next_norm), -1.0, 1.0)
-                angle = np.arccos(dot) * 180.0 / np.pi
-                cross = np.cross(heading_vec, vec_next_norm)
-                sign = np.sign(cross)
-                signed_angle = angle * sign
-                angle_to_publish = int((signed_angle + 360.0) % 360.0)
-                print(f"[AUTO_XOAY] Robot pos: ({curx:.3f}, {cury:.3f})")
-                print(f"[AUTO_XOAY] Next WP: {wp_next}")
-                print(f"[AUTO_XOAY] heading_deg: {heading_deg}")
-                print(f"[AUTO_XOAY] heading_vec: {heading_vec}")
-                print(f"[AUTO_XOAY] vec_next_norm: {vec_next_norm}")
-                print(f"[AUTO_XOAY] signed_angle: {signed_angle:.2f}° | angle_to_publish: {angle_to_publish}°")
-                # Gửi lệnh xoay
-                from MQTT.publisher_angle import AnglePublisher
-                from MQTT.mqtt_publisher_config import get_topic
-                def _publish_xoay_angle():
-                    pub = AnglePublisher()
-                    try:
-                        pub.topic = get_topic("xoay")
-                    except Exception:
-                        pass
-                    pub.publish_angle(angle_to_publish)
-                from PyQt6.QtCore import QTimer
-                QTimer.singleShot(0, _publish_xoay_angle)
-                print(f"[AUTO_XOAY] Publish xoay: {angle_to_publish}° (0-359, chiều ngắn nhất) để hướng về waypoint tiếp theo")
-        except Exception as e:
-            print(f"[AUTO_XOAY] Error: {e}")
-
-    def _dedupe_consecutive_waypoints(self, points):
-        deduped = []
-        last_point = None
-        for point in points:
-            current_point = (point["x"], point["y"])
-            if current_point != last_point:
-                deduped.append(point)
-                last_point = current_point
-        return deduped

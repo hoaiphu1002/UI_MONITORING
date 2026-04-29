@@ -85,7 +85,7 @@ class PathPlanner:
     def find_path(self, start_px, goal_name, ref_point=None):
         if goal_name not in self.all_nodes: return None
 
-        SNAP_THRESHOLD = 8.0
+        SNAP_THRESHOLD = 15.0
         # 1. LOGIC SNAP
         closest_node = min(self.all_nodes.keys(), key=lambda n: np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[n])))
         min_dist = np.linalg.norm(np.array(start_px) - np.array(self.all_nodes[closest_node]))
