@@ -280,9 +280,9 @@ class LocationTab(QWidget):
             self.logger.start_logging(self.full_plan_points)
             WaypointsPublisher().publish_waypoints(json.dumps(self.full_plan_points, indent=2))
 
-            # Logic xoay tự động (Giữ nguyên)
-            if len(self.full_plan_points) >= 2:
-                self._handle_auto_rotation(curx, cury)
+            # Tạm thời bỏ logic tự động xoay khi nhấn waypoint mới
+            # if len(self.full_plan_points) >= 2:
+            #     self._handle_auto_rotation(curx, cury)
 
         finally:
             # Mở khóa sau khi hoàn tất (hoặc sau khi lỗi)

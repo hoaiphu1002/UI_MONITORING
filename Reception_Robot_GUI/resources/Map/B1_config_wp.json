@@ -7,7 +7,7 @@
     "wp5": [850, 304],
     "wp9": [790, 305],
     "wp11": [580, 791],
-    "wp12": [860, 385],
+    "wp12": [850, 385],
     "wp13": [742, 300],
     "wp14": [850, 385]
   },
@@ -18,7 +18,8 @@
     "Chemistry hall": [850, 269],
     "Robotics lab": [464, 792],
     "Stairs": [820, 727],
-    "Electrical lab": [1116, 778]
+    "Electrical lab": [1116, 778],
+    "KY": [864,485]
   },
   "connections": {
     "wp0": ["wp1", "wp11"],
@@ -37,6 +38,7 @@
     "Chemistry hall": ["wp5", "wp12", "Water intake"],
     "Robotics lab": ["wp11"],
     "Stairs": ["wp1", "wp2"],
-    "Electrical lab": ["wp1"]
+    "Electrical lab": ["wp1"],
+    "KY": ["wp12"]
 }
 }

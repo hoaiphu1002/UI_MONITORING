@@ -220,7 +220,7 @@ class MainWindow(QMainWindow):
             self.ui.robot_status.setText("Idle")
             self.ui.robot_status_2.setText("Idle")
 
-            # Gọi thẳng hàm tính toán góc đã được định nghĩa rất tốt bên location.py
+            # Tạm thời bỏ logic xoay khi nhấn waypoint mới
             if self.last_goal == self.HOME_NAME:
                 self.admin_location_tab.publish_home_rotation()
             else:
