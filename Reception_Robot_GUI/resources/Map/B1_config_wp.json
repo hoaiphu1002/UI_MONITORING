@@ -18,8 +18,7 @@
     "Chemistry hall": [850, 269],
     "Robotics lab": [464, 792],
     "Stairs": [820, 727],
-    "Electrical lab": [1116, 778],
-    "KY": [864,485]
+    "Electrical lab": [1116, 778]
   },
   "connections": {
     "wp0": ["wp1", "wp11"],
@@ -33,12 +32,11 @@
     "wp13": ["wp9", "wp5", "Water intake"],
     
     "Restroom": ["wp2", "wp3"],
-    "Water intake": [ "wp13","Chemistry hall"],
+    "Water intake": [ "wp13"],
     "Home": ["wp12"],
     "Chemistry hall": ["wp5", "wp12", "Water intake"],
     "Robotics lab": ["wp11"],
     "Stairs": ["wp1", "wp2"],
-    "Electrical lab": ["wp1"],
-    "KY": ["wp12"]
+    "Electrical lab": ["wp1"]
 }
 }
