@@ -9,7 +9,7 @@
     "wp11": [580, 791],
     "wp12": [850, 385],
     "wp13": [742, 300],
-    "wp14": [850, 385]
+    "wp14": [850, 385]  
   },
   "goals": {
     "Restroom": [717, 505],
@@ -18,11 +18,12 @@
     "Chemistry hall": [850, 269],
     "Robotics lab": [464, 792],
     "Stairs": [820, 727],
-    "Electrical lab": [1116, 778]
+    "Khe": [871, 489],
+    "WP4": [850, 385]
   },
   "connections": {
     "wp0": ["wp1", "wp11"],
-    "wp1": ["wp0", "wp2", "Stairs", "Electrical lab"],
+    "wp1": ["wp0", "wp2", "Stairs"],
     "wp2": ["wp1", "wp3", "Stairs", "Restroom"],
     "wp3": ["wp2", "wp12", "Restroom"],
     "wp5": ["wp9", "wp12", "wp13", "Chemistry hall"],
@@ -37,6 +38,6 @@
     "Chemistry hall": ["wp5", "wp12", "Water intake"],
     "Robotics lab": ["wp11"],
     "Stairs": ["wp1", "wp2"],
-    "Electrical lab": ["wp1"]
+    "Khe": ["wp1"]
 }
 }

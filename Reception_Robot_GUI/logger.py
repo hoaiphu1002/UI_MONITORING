@@ -71,8 +71,15 @@ class PathLogger(QObject):
             t = max(0.0, min(1.0, c1 / c2))
 
         # Điểm chiếu lên đoạn thẳng
-        plan_x = x1 + t * vx
-        plan_y = y1 + t * vy
+            # Tìm điểm kế hoạch gần nhất với actual_x, actual_y
+            min_dist = float('inf')
+            plan_x, plan_y = None, None
+            for pt in self.full_plan_points:
+                dist = np.hypot(actual_x - pt["x"], actual_y - pt["y"])
+                if dist < min_dist:
+                    min_dist = dist
+                    plan_x = pt["x"]
+                    plan_y = pt["y"]
 
         # CTE
         error = np.hypot(xr - plan_x, yr - plan_y)
